@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Helper scripts (not needed for deployment)
+read_excel.py
+extract_data.py
+
+# Excel source file (too large for git)
+*.xlsm
+*.xlsx
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/

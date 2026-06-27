@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="ระบบจัดการงานซ่อมบำรุง MTC - ติดตามและจัดการงานซ่อมอาคารอย่างมีประสิทธิภาพ">
+    <title>MTC | ระบบจัดการงานซ่อมบำรุง</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="loading-screen">
+        <div class="loading-content">
+            <div class="loading-logo">
+                <span class="loading-icon material-icons-round">engineering</span>
+                <h1>MTC</h1>
+                <p>ระบบจัดการงานซ่อมบำรุง</p>
+            </div>
+            <div class="loading-bar-container">
+                <div class="loading-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app" class="app hidden">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="material-icons-round logo-icon">engineering</span>
+                    <div class="logo-text">
+                        <h1>MTC</h1>
+                        <span>Maintenance System</span>
+                    </div>
+                </div>
+                <button id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle sidebar">
+                    <span class="material-icons-round">menu</span>
+                </button>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-page="dashboard" id="nav-dashboard">
+                    <span class="material-icons-round">dashboard</span>
+                    <span class="nav-label">แดชบอร์ด</span>
+                </a>
+                <a href="#" class="nav-item" data-page="planned" id="nav-planned">
+                    <span class="material-icons-round">build_circle</span>
+                    <span class="nav-label">งานซ่อมตามแผน</span>
+                </a>
+                <a href="#" class="nav-item" data-page="requests" id="nav-requests">
+                    <span class="material-icons-round">report_problem</span>
+                    <span class="nav-label">แจ้งซ่อมเพิ่มเติม</span>
+                </a>
+                <a href="#" class="nav-item" data-page="warehouse" id="nav-warehouse">
+                    <span class="material-icons-round">inventory_2</span>
+                    <span class="nav-label">คลังงานซ่อม</span>
+                </a>
+                <a href="#" class="nav-item" data-page="leaks" id="nav-leaks">
+                    <span class="material-icons-round">water_drop</span>
+                    <span class="nav-label">ตำแหน่งน้ำรั่ว</span>
+                </a>
+                <a href="#" class="nav-item" data-page="curtains" id="nav-curtains">
+                    <span class="material-icons-round">curtains</span>
+                    <span class="nav-label">เช็คม่าน</span>
+                </a>
+                <div class="nav-divider"></div>
+                <a href="#" class="nav-item" data-page="monthly" id="nav-monthly">
+                    <span class="material-icons-round">bar_chart</span>
+                    <span class="nav-label">สรุปรายเดือน</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="sidebar-footer-info">
+                    <span class="material-icons-round">info</span>
+                    <span class="nav-label">MTC Building v1.0</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main id="main-content" class="main-content">
+            <!-- Top Bar -->
+            <header class="topbar">
+                <div class="topbar-left">
+                    <button id="mobile-menu-btn" class="mobile-menu-btn">
+                        <span class="material-icons-round">menu</span>
+                    </button>
+                    <h2 id="page-title" class="page-title">แดชบอร์ด</h2>
+                </div>
+                <div class="topbar-right">
+                    <div class="search-box" id="search-container">
+                        <span class="material-icons-round search-icon">search</span>
+                        <input type="text" id="global-search" placeholder="ค้นหางานซ่อม..." autocomplete="off">
+                        <kbd class="search-shortcut">Ctrl+K</kbd>
+                    </div>
+                    <div class="topbar-date">
+                        <span class="material-icons-round">calendar_today</span>
+                        <span id="current-date"></span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Page Content Container -->
+            <div id="page-content" class="page-content">
+                <!-- Dashboard Page -->
+                <section id="page-dashboard" class="page active">
+                    <div class="stats-grid" id="stats-grid">
+                        <!-- Stats cards rendered by JS -->
+                    </div>
+                    <div class="dashboard-grid">
+                        <div class="card chart-card" id="monthly-chart-card">
+                            <div class="card-header">
+                                <h3><span class="material-icons-round">trending_up</span> สรุปงานซ่อมรายเดือน</h3>
+                            </div>
+                            <div class="card-body">
+                                <canvas id="monthly-chart"></canvas>
+                            </div>
+                        </div>
+                        <div class="card recent-card" id="recent-activity-card">
+                            <div class="card-header">
+                                <h3><span class="material-icons-round">schedule</span> งานล่าสุด</h3>
+                            </div>
+                            <div class="card-body" id="recent-activity">
+                                <!-- rendered by JS -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="dashboard-grid mt-20">
+                        <div class="card" id="status-pie-card">
+                            <div class="card-header">
+                                <h3><span class="material-icons-round">donut_large</span> สถานะงาน</h3>
+                            </div>
+                            <div class="card-body chart-body-sm">
+                                <canvas id="status-chart"></canvas>
+                            </div>
+                        </div>
+                        <div class="card" id="type-bar-card">
+                            <div class="card-header">
+                                <h3><span class="material-icons-round">category</span> ประเภทงานซ่อม</h3>
+                            </div>
+                            <div class="card-body chart-body-sm">
+                                <canvas id="type-chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Planned Repairs Page -->
+                <section id="page-planned" class="page">
+                    <div class="page-actions">
+                        <div class="filter-group">
+                            <select id="planned-filter-status" class="filter-select">
+                                <option value="">สถานะทั้งหมด</option>
+                                <option value="เสร็จสิ้น">เสร็จสิ้น</option>
+                                <option value="กำลังดำเนินการ">กำลังดำเนินการ</option>
+                                <option value="รอดำเนินการ">รอดำเนินการ</option>
+                            </select>
+                            <select id="planned-filter-type" class="filter-select">
+                                <option value="">ประเภททั้งหมด</option>
+                            </select>
+                            <select id="planned-filter-month" class="filter-select">
+                                <option value="">เดือนทั้งหมด</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" id="add-planned-btn">
+                            <span class="material-icons-round">add</span>
+                            เพิ่มงานซ่อม
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="planned-table">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" data-sort="รหัสงานซ่อม">รหัส <span class="sort-icon material-icons-round">unfold_more</span></th>
+                                    <th class="sortable" data-sort="หัวข้อ">หัวข้อ <span class="sort-icon material-icons-round">unfold_more</span></th>
+                                    <th>ชั้น</th>
+                                    <th>ประเภท</th>
+                                    <th>ตำแหน่ง</th>
+                                    <th>ความสำคัญ</th>
+                                    <th class="sortable" data-sort="สำเร็จ">สถานะ <span class="sort-icon material-icons-round">unfold_more</span></th>
+                                    <th>เดือน</th>
+                                    <th class="actions-col">จัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="planned-tbody">
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="pagination" id="planned-pagination"></div>
+                </section>
+
+                <!-- Repair Requests Page -->
+                <section id="page-requests" class="page">
+                    <div class="page-actions">
+                        <div class="filter-group">
+                            <select id="requests-filter-status" class="filter-select">
+                                <option value="">สถานะทั้งหมด</option>
+                                <option value="เรียบร้อย">เรียบร้อย</option>
+                                <option value="กำลังดำเนินการ">กำลังดำเนินการ</option>
+                                <option value="รอดำเนินการ">รอดำเนินการ</option>
+                                <option value="โอนย้าย">โอนย้าย</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" id="add-request-btn">
+                            <span class="material-icons-round">add</span>
+                            เพิ่มการแจ้งซ่อม
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="requests-table">
+                            <thead>
+                                <tr>
+                                    <th>ลำดับ</th>
+                                    <th>ชื่อผู้แจ้ง</th>
+                                    <th>แจ้งผ่าน</th>
+                                    <th>เรื่อง</th>
+                                    <th>ชั้น</th>
+                                    <th>ประเภท</th>
+                                    <th>ตำแหน่ง</th>
+                                    <th>สถานะ</th>
+                                    <th>วันที่แจ้ง</th>
+                                    <th class="actions-col">จัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="requests-tbody">
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="pagination" id="requests-pagination"></div>
+                </section>
+
+                <!-- Warehouse Page -->
+                <section id="page-warehouse" class="page">
+                    <div class="page-actions">
+                        <div class="filter-group">
+                            <select id="warehouse-filter-status" class="filter-select">
+                                <option value="">สถานะทั้งหมด</option>
+                                <option value="สำเร็จ">สำเร็จ</option>
+                                <option value="กำลังดำเนินการ">กำลังดำเนินการ</option>
+                                <option value="รอดำเนินการ">รอดำเนินการ</option>
+                            </select>
+                            <select id="warehouse-filter-urgency" class="filter-select">
+                                <option value="">ความเร่งด่วนทั้งหมด</option>
+                                <option value="เร่งด่วน">เร่งด่วน</option>
+                                <option value="ไม่เร่งด่วน">ไม่เร่งด่วน</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" id="add-warehouse-btn">
+                            <span class="material-icons-round">add</span>
+                            เพิ่มงาน
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="warehouse-table">
+                            <thead>
+                                <tr>
+                                    <th>ลำดับ</th>
+                                    <th>วันที่แจ้ง</th>
+                                    <th>เดือน</th>
+                                    <th>ผู้แจ้ง</th>
+                                    <th>ฝ่าย</th>
+                                    <th>ชั้น</th>
+                                    <th>รายละเอียด</th>
+                                    <th>ประเภท</th>
+                                    <th>สถานะ</th>
+                                    <th>ความเร่งด่วน</th>
+                                    <th class="actions-col">จัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="warehouse-tbody">
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="pagination" id="warehouse-pagination"></div>
+                </section>
+
+                <!-- Leaks Page -->
+                <section id="page-leaks" class="page">
+                    <div class="page-actions">
+                        <div class="filter-group"></div>
+                        <button class="btn btn-primary" id="add-leak-btn">
+                            <span class="material-icons-round">add</span>
+                            เพิ่มตำแหน่งน้ำรั่ว
+                        </button>
+                    </div>
+                    <div class="cards-grid" id="leaks-grid">
+                    </div>
+                </section>
+
+                <!-- Curtains Page -->
+                <section id="page-curtains" class="page">
+                    <div class="page-actions">
+                        <div class="filter-group">
+                            <select id="curtains-filter-status" class="filter-select">
+                                <option value="">สถานะทั้งหมด</option>
+                                <option value="ปกติ">ปกติ</option>
+                                <option value="เสีย">เสีย</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" id="add-curtain-btn">
+                            <span class="material-icons-round">add</span>
+                            เพิ่มรายการม่าน
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="curtains-table">
+                            <thead>
+                                <tr>
+                                    <th>ลำดับ</th>
+                                    <th>อุปกรณ์</th>
+                                    <th>ตำแหน่ง</th>
+                                    <th>ชั้น</th>
+                                    <th>สถานะ</th>
+                                    <th>รายละเอียด</th>
+                                    <th>ตำแหน่งห้อง</th>
+                                    <th class="actions-col">จัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="curtains-tbody">
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Monthly Summary Page -->
+                <section id="page-monthly" class="page">
+                    <div class="monthly-charts-grid">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><span class="material-icons-round">show_chart</span> แนวโน้มงานซ่อมรายเดือน</h3>
+                            </div>
+                            <div class="card-body">
+                                <canvas id="monthly-detail-chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-container mt-20">
+                        <table class="data-table" id="monthly-table">
+                            <thead>
+                                <tr>
+                                    <th>เดือน</th>
+                                    <th>งานทั้งหมด</th>
+                                    <th>เสร็จ</th>
+                                    <th>รอดำเนินการ</th>
+                                    <th>งานสะสม</th>
+                                </tr>
+                            </thead>
+                            <tbody id="monthly-tbody">
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal Overlay -->
+    <div id="modal-overlay" class="modal-overlay hidden">
+        <div id="modal" class="modal">
+            <div class="modal-header">
+                <h3 id="modal-title">เพิ่มข้อมูล</h3>
+                <button id="modal-close" class="modal-close-btn">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <div class="modal-body" id="modal-body">
+                <!-- Dynamic form rendered by JS -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" id="modal-cancel-btn">ยกเลิก</button>
+                <button class="btn btn-primary" id="modal-save-btn">บันทึก</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Dialog -->
+    <div id="confirm-overlay" class="modal-overlay hidden">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h3 id="confirm-title">ยืนยันการลบ</h3>
+                <button class="modal-close-btn" id="confirm-close">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="confirm-message" class="confirm-message">คุณต้องการลบรายการนี้หรือไม่?</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" id="confirm-cancel-btn">ยกเลิก</button>
+                <button class="btn btn-danger" id="confirm-ok-btn">ลบ</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Move Modal -->
+    <div id="move-overlay" class="modal-overlay hidden">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h3>โอนย้ายงาน</h3>
+                <button class="modal-close-btn" id="move-close">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p class="move-info" id="move-info"></p>
+                <div class="form-group">
+                    <label>ย้ายไปยัง</label>
+                    <select id="move-destination" class="form-input">
+                        <option value="planned">งานซ่อมตามแผน</option>
+                        <option value="requests">แจ้งซ่อมเพิ่มเติม</option>
+                        <option value="warehouse">คลังงานซ่อม</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" id="move-cancel-btn">ยกเลิก</button>
+                <button class="btn btn-primary" id="move-ok-btn">
+                    <span class="material-icons-round">drive_file_move</span>
+                    ย้ายงาน
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
