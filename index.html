@@ -12,8 +12,63 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-screen">
+        <div class="login-bg-glow"></div>
+        <div class="login-card">
+            <div class="login-header">
+                <span class="material-icons-round login-logo-icon">engineering</span>
+                <h1 class="login-title">MTC</h1>
+                <p class="login-subtitle">ระบบจัดการงานซ่อมบำรุง</p>
+            </div>
+            <div class="login-body">
+                <div class="login-field">
+                    <label for="login-client-id">
+                        <span class="material-icons-round">key</span>
+                        Google Client ID
+                    </label>
+                    <input type="text" id="login-client-id" class="form-input" placeholder="xxxxx.apps.googleusercontent.com">
+                    <small class="login-hint">จาก Google Cloud Console → Credentials</small>
+                </div>
+                <div class="login-field">
+                    <label for="login-sheet-id">
+                        <span class="material-icons-round">table_chart</span>
+                        Spreadsheet ID
+                    </label>
+                    <input type="text" id="login-sheet-id" class="form-input" placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms">
+                    <small class="login-hint">จาก URL ของ Google Sheet: docs.google.com/spreadsheets/d/<strong>[ID นี้]</strong>/edit</small>
+                </div>
+                <div class="login-remember">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="login-remember" checked>
+                        <span>จดจำการตั้งค่า</span>
+                    </label>
+                </div>
+                <button id="login-google-btn" class="login-google-btn">
+                    <svg viewBox="0 0 24 24" width="20" height="20">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                    </svg>
+                    <span>เข้าสู่ระบบด้วย Google</span>
+                </button>
+                <div class="login-divider">
+                    <span>หรือ</span>
+                </div>
+                <button id="login-offline-btn" class="login-offline-btn">
+                    <span class="material-icons-round">cloud_off</span>
+                    <span>ใช้งานแบบออฟไลน์</span>
+                </button>
+            </div>
+            <div class="login-footer">
+                <p>MTC Building Maintenance System v2.0</p>
+            </div>
+        </div>
+    </div>
+
     <!-- Loading Screen -->
-    <div id="loading-screen" class="loading-screen">
+    <div id="loading-screen" class="loading-screen hidden">
         <div class="loading-content">
             <div class="loading-logo">
                 <span class="loading-icon material-icons-round">engineering</span>
@@ -23,6 +78,7 @@
             <div class="loading-bar-container">
                 <div class="loading-bar"></div>
             </div>
+            <p class="loading-status" id="loading-status">กำลังโหลดข้อมูล...</p>
         </div>
     </div>
 
@@ -73,10 +129,39 @@
                     <span class="nav-label">สรุปรายเดือน</span>
                 </a>
             </nav>
+
+            <!-- Settings Panel -->
+            <div class="sidebar-settings" id="sidebar-settings">
+                <div class="nav-divider"></div>
+                <div class="settings-user" id="settings-user">
+                    <img id="user-avatar" class="user-avatar" src="" alt="" onerror="this.style.display='none'">
+                    <div class="user-info">
+                        <span class="user-name" id="user-name">ไม่ได้เข้าสู่ระบบ</span>
+                        <span class="user-email" id="user-email"></span>
+                    </div>
+                </div>
+                <div class="settings-connection" id="settings-connection">
+                    <span class="connection-dot offline" id="connection-dot"></span>
+                    <span class="connection-text" id="connection-text">ออฟไลน์</span>
+                </div>
+                <button class="settings-btn" id="btn-change-db" title="เปลี่ยนฐานข้อมูล">
+                    <span class="material-icons-round">swap_horiz</span>
+                    <span class="nav-label">เปลี่ยนฐานข้อมูล</span>
+                </button>
+                <button class="settings-btn" id="btn-switch-account" title="เปลี่ยนบัญชี">
+                    <span class="material-icons-round">switch_account</span>
+                    <span class="nav-label">เปลี่ยนบัญชี</span>
+                </button>
+                <button class="settings-btn" id="btn-sign-out" title="ออกจากระบบ">
+                    <span class="material-icons-round">logout</span>
+                    <span class="nav-label">ออกจากระบบ</span>
+                </button>
+            </div>
+
             <div class="sidebar-footer">
                 <div class="sidebar-footer-info">
                     <span class="material-icons-round">info</span>
-                    <span class="nav-label">MTC Building v1.0</span>
+                    <span class="nav-label">MTC Building v2.0</span>
                 </div>
             </div>
         </aside>
@@ -92,6 +177,10 @@
                     <h2 id="page-title" class="page-title">แดชบอร์ด</h2>
                 </div>
                 <div class="topbar-right">
+                    <div class="sync-status" id="sync-status" title="สถานะการเชื่อมต่อ">
+                        <span class="sync-dot" id="sync-dot"></span>
+                        <span class="sync-text" id="sync-text">ออฟไลน์</span>
+                    </div>
                     <div class="search-box" id="search-container">
                         <span class="material-icons-round search-icon">search</span>
                         <input type="text" id="global-search" placeholder="ค้นหางานซ่อม..." autocomplete="off">
@@ -429,7 +518,62 @@
         </div>
     </div>
 
+    <!-- Change Database Modal -->
+    <div id="changedb-overlay" class="modal-overlay hidden">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h3>เปลี่ยนฐานข้อมูล</h3>
+                <button class="modal-close-btn" id="changedb-close">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Spreadsheet ID ใหม่</label>
+                    <input type="text" id="changedb-sheet-id" class="form-input" placeholder="วาง Spreadsheet ID ที่นี่">
+                    <small class="login-hint" style="margin-top:6px;display:block;">จาก URL: docs.google.com/spreadsheets/d/<strong>[ID]</strong>/edit</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" id="changedb-cancel-btn">ยกเลิก</button>
+                <button class="btn btn-primary" id="changedb-ok-btn">
+                    <span class="material-icons-round">swap_horiz</span>
+                    เปลี่ยน
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="google-sheets.js"></script>
     <script src="app.js"></script>
+    <script>
+        // Load Google API scripts asynchronously — don't block the page
+        (function() {
+            function loadScript(src, id) {
+                return new Promise((resolve) => {
+                    const s = document.createElement('script');
+                    s.src = src;
+                    s.id = id;
+                    s.async = true;
+                    s.onload = resolve;
+                    s.onerror = () => {
+                        console.warn('Failed to load: ' + src);
+                        resolve(); // resolve anyway so offline mode works
+                    };
+                    document.head.appendChild(s);
+                });
+            }
+            // Load both in parallel, but don't block the page
+            Promise.all([
+                loadScript('https://apis.google.com/js/api.js', 'gapi-script'),
+                loadScript('https://accounts.google.com/gsi/client', 'gis-script')
+            ]).then(() => {
+                window.googleApisLoaded = true;
+                console.log('Google API scripts loaded (or skipped)');
+            });
+        })();
+    </script>
 </body>
 </html>
+

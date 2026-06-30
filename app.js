@@ -3,6 +3,7 @@
  * ระบบจัดการงานซ่อมบำรุง MTC
  * 
  * Main Application JavaScript
+ * v2.0 — Google Sheets Integration
  */
 
 // ========================================
@@ -28,34 +29,194 @@ const AppState = {
     charts: {},
     searchQuery: '',
     editingItem: null,
-    editingSource: null
+    editingSource: null,
+    isOnline: false,
+    useGoogleSheets: false
 };
 
 // ========================================
 // Initialization
 // ========================================
-document.addEventListener('DOMContentLoaded', async () => {
-    await loadData();
+document.addEventListener('DOMContentLoaded', () => {
+    initLoginScreen();
+});
+
+function initLoginScreen() {
+    const savedConfig = JSON.parse(localStorage.getItem('mtc_gsheet_config') || '{}');
+
+    // Pre-fill saved config
+    const clientIdInput = document.getElementById('login-client-id');
+    const sheetIdInput = document.getElementById('login-sheet-id');
+    if (savedConfig.clientId) clientIdInput.value = savedConfig.clientId;
+    if (savedConfig.spreadsheetId) sheetIdInput.value = savedConfig.spreadsheetId;
+
+    // Google Sign-In button
+    document.getElementById('login-google-btn').addEventListener('click', async () => {
+        const clientId = clientIdInput.value.trim();
+        const sheetId = sheetIdInput.value.trim();
+
+        if (!clientId) {
+            showToast('กรุณากรอก Google Client ID', 'warning');
+            clientIdInput.focus();
+            return;
+        }
+        if (!sheetId) {
+            showToast('กรุณากรอก Spreadsheet ID', 'warning');
+            sheetIdInput.focus();
+            return;
+        }
+
+        // Check if Google API scripts are available
+        if (typeof gapi === 'undefined' || typeof google === 'undefined' || !google.accounts) {
+            showToast('กำลังโหลด Google API... กรุณาลองอีกครั้ง', 'warning');
+            // Wait a bit and retry
+            await new Promise(r => setTimeout(r, 2000));
+            if (typeof gapi === 'undefined' || typeof google === 'undefined' || !google.accounts) {
+                showToast('ไม่สามารถโหลด Google API ได้ ตรวจสอบการเชื่อมต่ออินเทอร์เน็ต', 'error');
+                return;
+            }
+        }
+
+        // Save config
+        if (document.getElementById('login-remember').checked) {
+            localStorage.setItem('mtc_gsheet_config', JSON.stringify({
+                clientId: clientId,
+                spreadsheetId: sheetId
+            }));
+        }
+
+        AppState.useGoogleSheets = true;
+        showLoadingScreen('กำลังเชื่อมต่อ Google...');
+
+        try {
+            const success = await GoogleSheetsDB.init({
+                clientId: clientId,
+                spreadsheetId: sheetId,
+                onAuthChange: handleAuthChange,
+                onDataRefresh: handleDataRefresh,
+                onConnectionChange: handleConnectionChange,
+                onError: (msg) => showToast(msg, 'error')
+            });
+
+            if (success) {
+                GoogleSheetsDB.signIn();
+            } else {
+                showToast('ไม่สามารถเริ่มต้น Google API ได้', 'error');
+                showLoginScreen();
+            }
+        } catch (err) {
+            console.error('Login error:', err);
+            showToast('เกิดข้อผิดพลาดในการเข้าสู่ระบบ', 'error');
+            showLoginScreen();
+        }
+    });
+
+    // Offline mode button
+    document.getElementById('login-offline-btn').addEventListener('click', async () => {
+        AppState.useGoogleSheets = false;
+        showLoadingScreen('กำลังโหลดข้อมูลออฟไลน์...');
+        await loadDataOffline();
+        initApp();
+    });
+}
+
+async function handleAuthChange(isSignedIn, user) {
+    if (isSignedIn) {
+        updateUserDisplay(user);
+        updateLoadingStatus('กำลังโหลดข้อมูลจาก Google Sheets...');
+
+        try {
+            const result = await GoogleSheetsDB.loadAllData();
+            AppState.data = result.data;
+            recalculateSummary();
+            initApp();
+            GoogleSheetsDB.startAutoRefresh(30000);
+            showToast('เชื่อมต่อ Google Sheets สำเร็จ', 'success');
+        } catch (err) {
+            console.error('Failed to load from Google Sheets:', err);
+            showToast('ไม่สามารถโหลดข้อมูลจาก Google Sheets ได้ ใช้ข้อมูลออฟไลน์แทน', 'warning');
+            await loadDataOffline();
+            initApp();
+        }
+    } else {
+        showLoginScreen();
+    }
+}
+
+function handleDataRefresh(data) {
+    AppState.data = data;
+    recalculateSummary();
+    renderPage(AppState.currentPage);
+    updateSyncStatus('synced');
+}
+
+function handleConnectionChange(isConnected) {
+    AppState.isOnline = isConnected;
+    updateConnectionUI(isConnected);
+}
+
+function showLoginScreen() {
+    document.getElementById('login-screen').classList.remove('hidden');
+    document.getElementById('loading-screen').classList.add('hidden');
+    document.getElementById('app').classList.add('hidden');
+}
+
+function showLoadingScreen(status) {
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('loading-screen').classList.remove('hidden');
+    document.getElementById('loading-screen').classList.remove('fade-out');
+    document.getElementById('app').classList.add('hidden');
+    updateLoadingStatus(status || 'กำลังโหลดข้อมูล...');
+    // Restart loading bar animation
+    const bar = document.querySelector('.loading-bar');
+    if (bar) {
+        bar.style.animation = 'none';
+        bar.offsetHeight; // trigger reflow
+        bar.style.animation = '';
+    }
+}
+
+function updateLoadingStatus(text) {
+    const el = document.getElementById('loading-status');
+    if (el) el.textContent = text;
+}
+
+function initApp() {
     initNavigation();
     initSidebar();
     initSearch();
     initModals();
+    initSettingsPanel();
     initDate();
     renderDashboard();
-    
-    // Hide loading screen
+
+    // Transition from loading to app
     setTimeout(() => {
         const loadingScreen = document.getElementById('loading-screen');
         loadingScreen.classList.add('fade-out');
         document.getElementById('app').classList.remove('hidden');
-        setTimeout(() => loadingScreen.remove(), 500);
-    }, 1600);
-});
+        setTimeout(() => {
+            loadingScreen.classList.add('hidden');
+        }, 500);
+    }, 800);
+}
 
 // ========================================
 // Data Loading
 // ========================================
-async function loadData() {
+async function loadDataOffline() {
+    // Try localStorage first
+    const saved = localStorage.getItem('mtc_data');
+    if (saved) {
+        try {
+            AppState.data = JSON.parse(saved);
+            return;
+        } catch (e) {
+            console.warn('Failed to parse saved data');
+        }
+    }
+
+    // Fallback to data.json
     try {
         const response = await fetch('data.json');
         const data = await response.json();
@@ -66,23 +227,162 @@ async function loadData() {
     }
 }
 
-function saveData() {
-    // Save to localStorage as a lightweight persistence layer
+async function saveData() {
+    // Always save to localStorage as cache
     localStorage.setItem('mtc_data', JSON.stringify(AppState.data));
+
+    // If online, sync summary to Google Sheets
+    if (AppState.useGoogleSheets && AppState.isOnline) {
+        try {
+            await GoogleSheetsDB.updateSummary(AppState.data.summary);
+        } catch (err) {
+            console.warn('Failed to sync summary:', err);
+        }
+        updateSyncStatus('synced');
+    }
+
     showToast('บันทึกข้อมูลสำเร็จ', 'success');
 }
 
-function loadSavedData() {
-    const saved = localStorage.getItem('mtc_data');
-    if (saved) {
-        try {
-            AppState.data = JSON.parse(saved);
-            return true;
-        } catch (e) {
-            return false;
+function recalculateSummary() {
+    const planned = AppState.data.planned || [];
+    let total = planned.length;
+    let done = 0;
+    let pending = 0;
+    let inProgress = 0;
+
+    planned.forEach(p => {
+        const s = p['สำเร็จ'] || '';
+        if (s.includes('เสร็จ')) done++;
+        else if (s.includes('กำลัง')) inProgress++;
+        else if (s.includes('รอ')) pending++;
+    });
+
+    AppState.data.summary = {
+        'งานทั้งหมด': String(total),
+        'สำเร็จ': String(done),
+        'รอดำเนินการ': String(pending),
+        'กำลังดำเนินการ': String(inProgress)
+    };
+}
+
+// ========================================
+// Settings Panel
+// ========================================
+function initSettingsPanel() {
+    // Change database button
+    document.getElementById('btn-change-db')?.addEventListener('click', () => {
+        const overlay = document.getElementById('changedb-overlay');
+        const input = document.getElementById('changedb-sheet-id');
+        input.value = GoogleSheetsDB.getSpreadsheetId() || '';
+        overlay.classList.remove('hidden');
+    });
+
+    // Change DB modal close/cancel
+    document.getElementById('changedb-close')?.addEventListener('click', () => {
+        document.getElementById('changedb-overlay').classList.add('hidden');
+    });
+    document.getElementById('changedb-cancel-btn')?.addEventListener('click', () => {
+        document.getElementById('changedb-overlay').classList.add('hidden');
+    });
+    document.getElementById('changedb-overlay')?.addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) {
+            document.getElementById('changedb-overlay').classList.add('hidden');
         }
+    });
+
+    // Change DB confirm
+    document.getElementById('changedb-ok-btn')?.addEventListener('click', async () => {
+        const newId = document.getElementById('changedb-sheet-id').value.trim();
+        if (!newId) {
+            showToast('กรุณากรอก Spreadsheet ID', 'warning');
+            return;
+        }
+        GoogleSheetsDB.setSpreadsheetId(newId);
+        document.getElementById('changedb-overlay').classList.add('hidden');
+        showToast('กำลังโหลดข้อมูลจากฐานข้อมูลใหม่...', 'info');
+
+        try {
+            const result = await GoogleSheetsDB.loadAllData();
+            AppState.data = result.data;
+            recalculateSummary();
+            renderPage(AppState.currentPage);
+            showToast('เปลี่ยนฐานข้อมูลสำเร็จ', 'success');
+        } catch (err) {
+            showToast('ไม่สามารถโหลดข้อมูลจากฐานข้อมูลใหม่ได้', 'error');
+        }
+    });
+
+    // Switch account
+    document.getElementById('btn-switch-account')?.addEventListener('click', () => {
+        if (AppState.useGoogleSheets) {
+            GoogleSheetsDB.signOut();
+            GoogleSheetsDB.signIn();
+        }
+    });
+
+    // Sign out
+    document.getElementById('btn-sign-out')?.addEventListener('click', () => {
+        if (AppState.useGoogleSheets) {
+            GoogleSheetsDB.signOut();
+            GoogleSheetsDB.stopAutoRefresh();
+        }
+        AppState.useGoogleSheets = false;
+        AppState.isOnline = false;
+        showLoginScreen();
+    });
+}
+
+function updateUserDisplay(user) {
+    if (!user) return;
+    const nameEl = document.getElementById('user-name');
+    const emailEl = document.getElementById('user-email');
+    const avatarEl = document.getElementById('user-avatar');
+
+    if (nameEl) nameEl.textContent = user.name;
+    if (emailEl) emailEl.textContent = user.email;
+    if (avatarEl && user.picture) {
+        avatarEl.src = user.picture;
+        avatarEl.style.display = 'block';
     }
-    return false;
+}
+
+function updateConnectionUI(isConnected) {
+    // Sidebar connection
+    const dot = document.getElementById('connection-dot');
+    const text = document.getElementById('connection-text');
+    if (dot) {
+        dot.className = `connection-dot ${isConnected ? 'online' : 'offline'}`;
+    }
+    if (text) {
+        text.textContent = isConnected ? 'เชื่อมต่อแล้ว' : 'ออฟไลน์';
+    }
+
+    // Topbar sync
+    updateSyncStatus(isConnected ? 'synced' : 'offline');
+}
+
+function updateSyncStatus(status) {
+    const dot = document.getElementById('sync-dot');
+    const text = document.getElementById('sync-text');
+
+    if (!dot || !text) return;
+
+    switch (status) {
+        case 'synced':
+            dot.className = 'sync-dot online';
+            text.textContent = 'ซิงค์แล้ว';
+            break;
+        case 'syncing':
+            dot.className = 'sync-dot syncing';
+            text.textContent = 'กำลังซิงค์...';
+            break;
+        case 'offline':
+        default:
+            dot.className = 'sync-dot';
+            text.textContent = 'ออฟไลน์';
+            break;
+    }
 }
 
 // ========================================
@@ -165,21 +465,26 @@ function initSidebar() {
     const sidebar = document.getElementById('sidebar');
     const mobileBtn = document.getElementById('mobile-menu-btn');
 
-    toggleBtn.addEventListener('click', () => {
-        sidebar.classList.toggle('collapsed');
-        AppState.sidebarCollapsed = sidebar.classList.contains('collapsed');
-    });
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', () => {
+            sidebar.classList.toggle('collapsed');
+            AppState.sidebarCollapsed = sidebar.classList.contains('collapsed');
+        });
+    }
 
-    mobileBtn.addEventListener('click', () => {
-        sidebar.classList.toggle('open');
-    });
+    if (mobileBtn) {
+        mobileBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            sidebar.classList.toggle('open');
+        });
+    }
 
     // Close sidebar when clicking outside on mobile
     document.addEventListener('click', (e) => {
         if (window.innerWidth <= 768 &&
-            sidebar.classList.contains('open') &&
+            sidebar && sidebar.classList.contains('open') &&
             !sidebar.contains(e.target) &&
-            e.target !== mobileBtn) {
+            (!mobileBtn || !mobileBtn.contains(e.target))) {
             sidebar.classList.remove('open');
         }
     });
@@ -1120,9 +1425,9 @@ function getFormHTML(source, item) {
                     <div class="form-group">
                         <label>เดือน</label>
                         <select class="form-input" id="f-month">
-                            ${['เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม','มกราคม','กุมภาพันธ์','มีนาคม'].map(m =>
-                                `<option value="${m}" ${v('เดือน') === m ? 'selected' : ''}>${m}</option>`
-                            ).join('')}
+                            ${['เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม'].map(m =>
+                `<option value="${m}" ${v('เดือน') === m ? 'selected' : ''}>${m}</option>`
+            ).join('')}
                         </select>
                     </div>
                 </div>
@@ -1138,9 +1443,9 @@ function getFormHTML(source, item) {
                     <div class="form-group">
                         <label>ประเภท</label>
                         <select class="form-input" id="f-type">
-                            ${['ไฟฟ้า','ประปา','สุขภัณฑ์','ม่าน','ฝ้า','ประตู','ขอบคิ้ว','อุปกรณ์','ระบบแอร์','เก้าอี้','อื่นๆ'].map(t =>
-                                `<option value="${t}" ${v('ประเภท') === t ? 'selected' : ''}>${t}</option>`
-                            ).join('')}
+                            ${['ไฟฟ้า', 'ประปา', 'สุขภัณฑ์', 'ม่าน', 'ฝ้า', 'ประตู', 'ขอบคิ้ว', 'อุปกรณ์', 'ระบบแอร์', 'เก้าอี้', 'อื่นๆ'].map(t =>
+                `<option value="${t}" ${v('ประเภท') === t ? 'selected' : ''}>${t}</option>`
+            ).join('')}
                         </select>
                     </div>
                 </div>
@@ -1202,9 +1507,9 @@ function getFormHTML(source, item) {
                     <div class="form-group">
                         <label>ประเภท</label>
                         <select class="form-input" id="f-type">
-                            ${['ไฟฟ้า','ประปา','สุขภัณฑ์','ม่าน','ฝ้า','ประตู','ขอบคิ้ว','อุปกรณ์','ระบบแอร์','เก้าอี้','อื่นๆ'].map(t =>
-                                `<option value="${t}" ${v('ประเภท') === t ? 'selected' : ''}>${t}</option>`
-                            ).join('')}
+                            ${['ไฟฟ้า', 'ประปา', 'สุขภัณฑ์', 'ม่าน', 'ฝ้า', 'ประตู', 'ขอบคิ้ว', 'อุปกรณ์', 'ระบบแอร์', 'เก้าอี้', 'อื่นๆ'].map(t =>
+                `<option value="${t}" ${v('ประเภท') === t ? 'selected' : ''}>${t}</option>`
+            ).join('')}
                         </select>
                     </div>
                 </div>
@@ -1263,9 +1568,9 @@ function getFormHTML(source, item) {
                     <div class="form-group">
                         <label>ประเภท</label>
                         <select class="form-input" id="f-type">
-                            ${['ไฟฟ้า','ประปา','สุขภัณฑ์','ม่าน','ฝ้า','ประตู','ขอบคิ้ว','อุปกรณ์','ระบบแอร์','เก้าอี้','อื่นๆ'].map(t =>
-                                `<option value="${t}" ${v('ประเภท') === t ? 'selected' : ''}>${t}</option>`
-                            ).join('')}
+                            ${['ไฟฟ้า', 'ประปา', 'สุขภัณฑ์', 'ม่าน', 'ฝ้า', 'ประตู', 'ขอบคิ้ว', 'อุปกรณ์', 'ระบบแอร์', 'เก้าอี้', 'อื่นๆ'].map(t =>
+                `<option value="${t}" ${v('ประเภท') === t ? 'selected' : ''}>${t}</option>`
+            ).join('')}
                         </select>
                     </div>
                 </div>
@@ -1350,7 +1655,7 @@ function getFormHTML(source, item) {
     }
 }
 
-function handleSave() {
+async function handleSave() {
     const source = AppState.editingSource;
     if (!source) return;
 
@@ -1443,6 +1748,17 @@ function handleSave() {
     if (AppState.editingItem !== null) {
         // Edit existing
         AppState.data[source][AppState.editingItem] = newItem;
+
+        // Sync to Google Sheets
+        if (AppState.useGoogleSheets && AppState.isOnline) {
+            try {
+                updateSyncStatus('syncing');
+                await GoogleSheetsDB.updateRow(source, AppState.editingItem, newItem);
+            } catch (err) {
+                console.warn('Failed to sync edit to Google Sheets:', err);
+                showToast('แก้ไขในเครื่องสำเร็จ แต่ไม่สามารถซิงค์ได้', 'warning');
+            }
+        }
         showToast('แก้ไขข้อมูลสำเร็จ', 'success');
     } else {
         // Add new - reindex
@@ -1452,9 +1768,21 @@ function handleSave() {
             newItem['ลำดับ'] = String(AppState.data.warehouse.length + 1);
         }
         AppState.data[source].push(newItem);
+
+        // Sync to Google Sheets
+        if (AppState.useGoogleSheets && AppState.isOnline) {
+            try {
+                updateSyncStatus('syncing');
+                await GoogleSheetsDB.appendRow(source, newItem);
+            } catch (err) {
+                console.warn('Failed to sync add to Google Sheets:', err);
+                showToast('เพิ่มในเครื่องสำเร็จ แต่ไม่สามารถซิงค์ได้', 'warning');
+            }
+        }
         showToast('เพิ่มข้อมูลสำเร็จ', 'success');
     }
 
+    recalculateSummary();
     saveData();
     closeModal();
     renderPage(AppState.currentPage);
@@ -1482,8 +1810,21 @@ function deleteItem(source, index) {
     const newOkBtn = okBtn.cloneNode(true);
     okBtn.parentNode.replaceChild(newOkBtn, okBtn);
 
-    newOkBtn.addEventListener('click', () => {
+    newOkBtn.addEventListener('click', async () => {
         AppState.data[source].splice(index, 1);
+
+        // Sync to Google Sheets
+        if (AppState.useGoogleSheets && AppState.isOnline) {
+            try {
+                updateSyncStatus('syncing');
+                await GoogleSheetsDB.deleteRow(source, index);
+            } catch (err) {
+                console.warn('Failed to sync delete to Google Sheets:', err);
+                showToast('ลบในเครื่องสำเร็จ แต่ไม่สามารถซิงค์ได้', 'warning');
+            }
+        }
+
+        recalculateSummary();
         saveData();
         closeConfirm();
         renderPage(AppState.currentPage);
@@ -1523,7 +1864,7 @@ function moveItem(source, index) {
     const newOkBtn = okBtn.cloneNode(true);
     okBtn.parentNode.replaceChild(newOkBtn, okBtn);
 
-    newOkBtn.addEventListener('click', () => {
+    newOkBtn.addEventListener('click', async () => {
         const destination = document.getElementById('move-destination').value;
         const movedItem = AppState.data[source].splice(index, 1)[0];
 
@@ -1531,6 +1872,19 @@ function moveItem(source, index) {
         const converted = convertItemForDestination(movedItem, source, destination);
         AppState.data[destination].push(converted);
 
+        // Sync to Google Sheets
+        if (AppState.useGoogleSheets && AppState.isOnline) {
+            try {
+                updateSyncStatus('syncing');
+                await GoogleSheetsDB.deleteRow(source, index);
+                await GoogleSheetsDB.appendRow(destination, converted);
+            } catch (err) {
+                console.warn('Failed to sync move to Google Sheets:', err);
+                showToast('ย้ายในเครื่องสำเร็จ แต่ไม่สามารถซิงค์ได้', 'warning');
+            }
+        }
+
+        recalculateSummary();
         saveData();
         closeMoveModal();
         renderPage(AppState.currentPage);
@@ -1745,6 +2099,7 @@ function getPageName(source) {
 // ========================================
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
+    if (!container) return;
     const icons = {
         success: 'check_circle',
         error: 'error',
