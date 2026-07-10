@@ -1,4 +1,4 @@
-/**
+ /**
  * MTC Maintenance Management System
  * ระบบจัดการงานซ่อมบำรุง MTC
  * 
@@ -9,7 +9,7 @@
 // ========================================
 // Global State
 // ========================================
-let appInitialized = false;
+let appInitialized = false; 
 let loadingTimeout = null;
 
 const AppState = {

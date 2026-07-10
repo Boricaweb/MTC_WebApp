@@ -139,6 +139,9 @@ body {
     opacity: 0;
     visibility: hidden;
 }
+.loading-screen.hidden {
+    display: none;
+}
 .loading-content {
     text-align: center;
 }
