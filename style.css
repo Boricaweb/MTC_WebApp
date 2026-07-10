@@ -174,17 +174,33 @@ body {
     overflow: hidden;
 }
 .loading-bar {
-    width: 0%;
+    width: 40%;
     height: 100%;
     background: var(--gradient-primary);
     border-radius: 4px;
-    animation: loading-progress 1.5s ease-in-out forwards;
+    animation: loading-progress 1.5s ease-in-out infinite;
 }
 
 @keyframes loading-progress {
-    0% { width: 0%; }
-    50% { width: 70%; }
-    100% { width: 100%; }
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+}
+
+/* Loading screen retry/fallback buttons */
+.loading-actions {
+    margin-top: 24px;
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+}
+.loading-actions.visible {
+    opacity: 1;
+}
+.loading-actions .btn {
+    font-size: 13px;
+    padding: 8px 20px;
 }
 @keyframes pulse-glow {
     0%, 100% { filter: drop-shadow(0 0 15px rgba(220, 38, 38, 0.3)); }

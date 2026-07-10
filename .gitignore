@@ -19,3 +19,8 @@ desktop.ini
 # IDE
 .vscode/
 .idea/
+
+# Node.js
+node_modules/
+coverage/
+package-lock.json

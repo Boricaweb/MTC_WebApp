@@ -9,6 +9,9 @@
 // ========================================
 // Global State
 // ========================================
+let appInitialized = false;
+let loadingTimeout = null;
+
 const AppState = {
     data: {
         planned: [],
@@ -31,7 +34,8 @@ const AppState = {
     editingItem: null,
     editingSource: null,
     isOnline: false,
-    useGoogleSheets: false
+    useGoogleSheets: false,
+    modalOpen: false
 };
 
 // ========================================
@@ -66,11 +70,19 @@ function initLoginScreen() {
             return;
         }
 
-        // Check if Google API scripts are available
+        // Wait for Google API scripts with polling (max 10 seconds)
         if (typeof gapi === 'undefined' || typeof google === 'undefined' || !google.accounts) {
-            showToast('กำลังโหลด Google API... กรุณาลองอีกครั้ง', 'warning');
-            // Wait a bit and retry
-            await new Promise(r => setTimeout(r, 2000));
+            showToast('กำลังโหลด Google API...', 'info');
+            const maxWait = 10000;
+            const pollInterval = 500;
+            let waited = 0;
+            while (waited < maxWait) {
+                await new Promise(r => setTimeout(r, pollInterval));
+                waited += pollInterval;
+                if (typeof gapi !== 'undefined' && typeof google !== 'undefined' && google.accounts) {
+                    break;
+                }
+            }
             if (typeof gapi === 'undefined' || typeof google === 'undefined' || !google.accounts) {
                 showToast('ไม่สามารถโหลด Google API ได้ ตรวจสอบการเชื่อมต่ออินเทอร์เน็ต', 'error');
                 return;
@@ -99,6 +111,7 @@ function initLoginScreen() {
             });
 
             if (success) {
+                startLoadingTimeout();
                 GoogleSheetsDB.signIn();
             } else {
                 showToast('ไม่สามารถเริ่มต้น Google API ได้', 'error');
@@ -144,6 +157,11 @@ async function handleAuthChange(isSignedIn, user) {
 }
 
 function handleDataRefresh(data) {
+    // Guard: don't overwrite data while user has modal open
+    if (AppState.modalOpen) {
+        console.log('Auto-refresh skipped: modal is open');
+        return;
+    }
     AppState.data = data;
     recalculateSummary();
     renderPage(AppState.currentPage);
@@ -167,13 +185,9 @@ function showLoadingScreen(status) {
     document.getElementById('loading-screen').classList.remove('fade-out');
     document.getElementById('app').classList.add('hidden');
     updateLoadingStatus(status || 'กำลังโหลดข้อมูล...');
-    // Restart loading bar animation
-    const bar = document.querySelector('.loading-bar');
-    if (bar) {
-        bar.style.animation = 'none';
-        bar.offsetHeight; // trigger reflow
-        bar.style.animation = '';
-    }
+    // Hide retry buttons when loading starts
+    const actions = document.getElementById('loading-actions');
+    if (actions) actions.classList.remove('visible');
 }
 
 function updateLoadingStatus(text) {
@@ -181,13 +195,61 @@ function updateLoadingStatus(text) {
     if (el) el.textContent = text;
 }
 
+function startLoadingTimeout() {
+    clearLoadingTimeout();
+    loadingTimeout = setTimeout(() => {
+        // If loading screen is still visible, show retry buttons
+        const loadingScreen = document.getElementById('loading-screen');
+        if (loadingScreen && !loadingScreen.classList.contains('hidden')) {
+            updateLoadingStatus('การเชื่อมต่อใช้เวลานาน...');
+            const actions = document.getElementById('loading-actions');
+            if (actions) actions.classList.add('visible');
+        }
+    }, 15000); // 15 seconds timeout
+
+    // Wire up retry and offline buttons
+    const retryBtn = document.getElementById('loading-retry-btn');
+    const offlineBtn = document.getElementById('loading-offline-btn');
+
+    if (retryBtn) {
+        retryBtn.onclick = () => {
+            clearLoadingTimeout();
+            showLoginScreen();
+            showToast('กรุณาลองเข้าสู่ระบบอีกครั้ง', 'info');
+        };
+    }
+    if (offlineBtn) {
+        offlineBtn.onclick = async () => {
+            clearLoadingTimeout();
+            AppState.useGoogleSheets = false;
+            showLoadingScreen('กำลังโหลดข้อมูลออฟไลน์...');
+            await loadDataOffline();
+            initApp();
+        };
+    }
+}
+
+function clearLoadingTimeout() {
+    if (loadingTimeout) {
+        clearTimeout(loadingTimeout);
+        loadingTimeout = null;
+    }
+}
+
 function initApp() {
-    initNavigation();
-    initSidebar();
-    initSearch();
-    initModals();
-    initSettingsPanel();
-    initDate();
+    clearLoadingTimeout();
+
+    // Prevent duplicate event listener attachment
+    if (!appInitialized) {
+        initNavigation();
+        initSidebar();
+        initSearch();
+        initModals();
+        initSettingsPanel();
+        initDate();
+        appInitialized = true;
+    }
+
     renderDashboard();
 
     // Transition from loading to app
@@ -1374,6 +1436,7 @@ function openAddModal(source) {
     document.getElementById('modal-title').textContent = getAddTitle(source);
     document.getElementById('modal-body').innerHTML = getFormHTML(source, null);
     document.getElementById('modal-overlay').classList.remove('hidden');
+    AppState.modalOpen = true;
 }
 
 function openEditModal(source, item) {
@@ -1381,12 +1444,14 @@ function openEditModal(source, item) {
     document.getElementById('modal-title').textContent = getEditTitle(source);
     document.getElementById('modal-body').innerHTML = getFormHTML(source, item);
     document.getElementById('modal-overlay').classList.remove('hidden');
+    AppState.modalOpen = true;
 }
 
 function closeModal() {
     document.getElementById('modal-overlay').classList.add('hidden');
     AppState.editingItem = null;
     AppState.editingSource = null;
+    AppState.modalOpen = false;
 }
 
 function getAddTitle(source) {
@@ -1783,7 +1848,7 @@ async function handleSave() {
     }
 
     recalculateSummary();
-    saveData();
+    await saveData();
     closeModal();
     renderPage(AppState.currentPage);
 }
@@ -1825,7 +1890,7 @@ function deleteItem(source, index) {
         }
 
         recalculateSummary();
-        saveData();
+        await saveData();
         closeConfirm();
         renderPage(AppState.currentPage);
         showToast('ลบข้อมูลสำเร็จ', 'success');
@@ -1885,7 +1950,7 @@ function moveItem(source, index) {
         }
 
         recalculateSummary();
-        saveData();
+        await saveData();
         closeMoveModal();
         renderPage(AppState.currentPage);
         showToast(`ย้ายไปยัง ${pages[destination]} สำเร็จ`, 'success');
@@ -2010,6 +2075,16 @@ function handleDrop(e) {
             const arr = AppState.data[source];
             const [moved] = arr.splice(fromIndex, 1);
             arr.splice(dropIndex, 0, moved);
+
+            // Sync reordered data to Google Sheets
+            if (AppState.useGoogleSheets && AppState.isOnline) {
+                updateSyncStatus('syncing');
+                GoogleSheetsDB.writeFullSheet(source, arr).catch(err => {
+                    console.warn('Failed to sync reorder to Google Sheets:', err);
+                    showToast('เรียงลำดับในเครื่องสำเร็จ แต่ไม่สามารถซิงค์ได้', 'warning');
+                });
+            }
+
             saveData();
             renderPage(AppState.currentPage);
             showToast('เรียงลำดับใหม่สำเร็จ', 'info');
@@ -2109,10 +2184,14 @@ function showToast(message, type = 'info') {
 
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    toast.innerHTML = `
-        <span class="material-icons-round">${icons[type] || 'info'}</span>
-        <span>${message}</span>
-    `;
+    // XSS-safe: use textContent instead of innerHTML for the message
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'material-icons-round';
+    iconSpan.textContent = icons[type] || 'info';
+    const msgSpan = document.createElement('span');
+    msgSpan.textContent = message;
+    toast.appendChild(iconSpan);
+    toast.appendChild(msgSpan);
 
     container.appendChild(toast);
 
