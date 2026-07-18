@@ -12,8 +12,15 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="loading-screen">
+        <div class="loading-logo">MTC</div>
+        <div class="loading-subtitle">MAINTENANCE SYSTEM</div>
+        <div class="loading-spinner"></div>
+    </div>
+
     <!-- Login Screen -->
-    <div id="login-screen" class="login-screen">
+    <div id="login-screen" class="login-screen hidden">
         <div class="login-bg-glow"></div>
         <div class="login-card">
             <div class="login-header">
@@ -23,567 +30,453 @@
             </div>
             <div class="login-body">
                 <div class="login-field">
-                    <label for="login-client-id">
-                        <span class="material-icons-round">key</span>
-                        Google Client ID
+                    <label for="login-sheet-url">
+                        <span class="material-icons-round">link</span>
+                        ลิงก์ Google Apps Script (Web App URL)
                     </label>
-                    <input type="text" id="login-client-id" class="form-input" placeholder="xxxxx.apps.googleusercontent.com">
-                    <small class="login-hint">จาก Google Cloud Console → Credentials</small>
+                    <input type="url" id="login-sheet-url" class="form-input" placeholder="https://script.google.com/macros/s/xxxxx/exec">
+                    <p style="font-size:11px;color:var(--text-tertiary);margin-top:6px;">วาง Web App URL ของ Apps Script ที่ติดตั้งไว้ เพื่อใช้ระบบอัปเดตอัตโนมัติ (Auto-Upload)</p>
                 </div>
-                <div class="login-field">
-                    <label for="login-sheet-id">
-                        <span class="material-icons-round">table_chart</span>
-                        Spreadsheet ID
-                    </label>
-                    <input type="text" id="login-sheet-id" class="form-input" placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms">
-                    <small class="login-hint">จาก URL ของ Google Sheet: docs.google.com/spreadsheets/d/<strong>[ID นี้]</strong>/edit</small>
+                <div class="login-actions">
+                    <button id="login-connect-btn" class="btn btn-primary" onclick="handleGoogleLogin()">
+                        <span class="material-icons-round">cloud_upload</span>
+                        เชื่อมต่อ Google Sheets
+                    </button>
+                    <div class="login-divider">หรือ</div>
+                    <button id="login-offline-btn" class="btn btn-ghost" onclick="handleOfflineMode()">
+                        <span class="material-icons-round">wifi_off</span>
+                        ใช้งานแบบออฟไลน์
+                    </button>
                 </div>
-                <div class="login-remember">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="login-remember" checked>
-                        <span>จดจำการตั้งค่า</span>
-                    </label>
-                </div>
-                <button id="login-google-btn" class="login-google-btn">
-                    <svg viewBox="0 0 24 24" width="20" height="20">
-                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
-                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                    </svg>
-                    <span>เข้าสู่ระบบด้วย Google</span>
-                </button>
-                <div class="login-divider">
-                    <span>หรือ</span>
-                </div>
-                <button id="login-offline-btn" class="login-offline-btn">
-                    <span class="material-icons-round">cloud_off</span>
-                    <span>ใช้งานแบบออฟไลน์</span>
-                </button>
-            </div>
-            <div class="login-footer">
-                <p>MTC Building Maintenance System v2.0</p>
             </div>
         </div>
     </div>
-
-    <!-- Loading Screen -->
-    <div id="loading-screen" class="loading-screen hidden">
-        <div class="loading-content">
-            <div class="loading-logo">
-                <span class="loading-icon material-icons-round">engineering</span>
-                <h1>MTC</h1>
-                <p>ระบบจัดการงานซ่อมบำรุง</p>
-            </div>
-            <div class="loading-bar-container">
-                <div class="loading-bar"></div>
-            </div>
-            <p class="loading-status" id="loading-status">กำลังโหลดข้อมูล...</p>
-            <div class="loading-actions" id="loading-actions">
-                <button class="btn btn-primary" id="loading-retry-btn">
-                    <span class="material-icons-round" style="font-size:16px;vertical-align:middle;margin-right:4px">refresh</span>
-                    ลองใหม่
-                </button>
-                <button class="btn btn-ghost" id="loading-offline-btn">
-                    <span class="material-icons-round" style="font-size:16px;vertical-align:middle;margin-right:4px">cloud_off</span>
-                    ใช้งานออฟไลน์
-                </button>
-            </div>
-        </div>
-    </div>
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
 
     <!-- Main App -->
-    <div id="app" class="app hidden">
+    <div id="app" class="app-container" style="display:none;">
         <!-- Sidebar -->
         <aside id="sidebar" class="sidebar">
             <div class="sidebar-header">
-                <div class="logo">
-                    <span class="material-icons-round logo-icon">engineering</span>
-                    <div class="logo-text">
-                        <h1>MTC</h1>
-                        <span>Maintenance System</span>
-                    </div>
+                <div class="sidebar-logo-icon">
+                    <span class="material-icons-round">engineering</span>
                 </div>
-                <button id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle sidebar">
-                    <span class="material-icons-round">menu</span>
-                </button>
+                <div class="sidebar-logo-text">
+                    <span class="logo-title">MTC</span>
+                    <span class="logo-sub">Maintenance System</span>
+                </div>
             </div>
+
             <nav class="sidebar-nav">
-                <a href="#" class="nav-item active" data-page="dashboard" id="nav-dashboard">
+                <div class="nav-section-label">เมนูหลัก</div>
+                <a class="nav-item active" data-page="dashboard" id="nav-dashboard">
                     <span class="material-icons-round">dashboard</span>
                     <span class="nav-label">แดชบอร์ด</span>
                 </a>
-                <a href="#" class="nav-item" data-page="planned" id="nav-planned">
-                    <span class="material-icons-round">build_circle</span>
-                    <span class="nav-label">งานซ่อมตามแผน</span>
+                <a class="nav-item" data-page="repairs" id="nav-repairs">
+                    <span class="material-icons-round">build</span>
+                    <span class="nav-label">รายการงานซ่อม</span>
                 </a>
-                <a href="#" class="nav-item" data-page="requests" id="nav-requests">
-                    <span class="material-icons-round">report_problem</span>
-                    <span class="nav-label">แจ้งซ่อมเพิ่มเติม</span>
+                <a class="nav-item" data-page="weekly" id="nav-weekly">
+                    <span class="material-icons-round">date_range</span>
+                    <span class="nav-label">สรุปรายสัปดาห์</span>
                 </a>
-                <a href="#" class="nav-item" data-page="warehouse" id="nav-warehouse">
+                <a class="nav-item" data-page="analysis" id="nav-analysis">
+                    <span class="material-icons-round">analytics</span>
+                    <span class="nav-label">วิเคราะห์รายเดือน</span>
+                </a>
+
+                <div class="nav-section-label">ลิงก์ภายนอก</div>
+                <a class="nav-item nav-external" href="https://script.google.com/macros/s/AKfycby2dTKsM-pbyvQqqd3w0fU4hcSqPtoWrEK-WikE3fhYZ7Og9Jq5rxnqAntlCIUYw-ce/exec" target="_blank" rel="noopener" id="nav-parts">
                     <span class="material-icons-round">inventory_2</span>
-                    <span class="nav-label">คลังงานซ่อม</span>
-                </a>
-                <a href="#" class="nav-item" data-page="leaks" id="nav-leaks">
-                    <span class="material-icons-round">water_drop</span>
-                    <span class="nav-label">ตำแหน่งน้ำรั่ว</span>
-                </a>
-                <a href="#" class="nav-item" data-page="curtains" id="nav-curtains">
-                    <span class="material-icons-round">curtains</span>
-                    <span class="nav-label">เช็คม่าน</span>
-                </a>
-                <div class="nav-divider"></div>
-                <a href="#" class="nav-item" data-page="monthly" id="nav-monthly">
-                    <span class="material-icons-round">bar_chart</span>
-                    <span class="nav-label">สรุปรายเดือน</span>
+                    <span class="nav-label">ระบบเบิกอะไหล่</span>
+                    <span class="nav-external-badge">↗</span>
                 </a>
             </nav>
 
-            <!-- Settings Panel -->
-            <div class="sidebar-settings" id="sidebar-settings">
-                <div class="nav-divider"></div>
-                <div class="settings-user" id="settings-user">
-                    <img id="user-avatar" class="user-avatar" src="" alt="" onerror="this.style.display='none'">
-                    <div class="user-info">
-                        <span class="user-name" id="user-name">ไม่ได้เข้าสู่ระบบ</span>
-                        <span class="user-email" id="user-email"></span>
-                    </div>
-                </div>
-                <div class="settings-connection" id="settings-connection">
-                    <span class="connection-dot offline" id="connection-dot"></span>
-                    <span class="connection-text" id="connection-text">ออฟไลน์</span>
-                </div>
-                <button class="settings-btn" id="btn-change-db" title="เปลี่ยนฐานข้อมูล">
-                    <span class="material-icons-round">swap_horiz</span>
-                    <span class="nav-label">เปลี่ยนฐานข้อมูล</span>
-                </button>
-                <button class="settings-btn" id="btn-switch-account" title="เปลี่ยนบัญชี">
-                    <span class="material-icons-round">switch_account</span>
-                    <span class="nav-label">เปลี่ยนบัญชี</span>
-                </button>
-                <button class="settings-btn" id="btn-sign-out" title="ออกจากระบบ">
-                    <span class="material-icons-round">logout</span>
-                    <span class="nav-label">ออกจากระบบ</span>
-                </button>
-            </div>
-
             <div class="sidebar-footer">
-                <div class="sidebar-footer-info">
+                <div class="sidebar-footer-info" style="cursor:pointer; color:var(--text-secondary); transition:color 0.2s" onclick="handleLogout()" title="ออกจากระบบ">
+                    <span class="material-icons-round">logout</span>
+                    <span>ออกจากระบบ</span>
+                </div>
+                <div class="sidebar-footer-info" style="margin-top:8px">
                     <span class="material-icons-round">info</span>
-                    <span class="nav-label">MTC Building v2.0</span>
+                    <span>MTC Building v3.0</span>
                 </div>
             </div>
         </aside>
 
         <!-- Main Content -->
-        <main id="main-content" class="main-content">
-            <!-- Top Bar -->
+        <main class="main-content">
+            <!-- Topbar -->
             <header class="topbar">
                 <div class="topbar-left">
-                    <button id="mobile-menu-btn" class="mobile-menu-btn">
+                    <button class="mobile-menu-btn" id="mobile-menu-btn" onclick="toggleSidebar()">
                         <span class="material-icons-round">menu</span>
                     </button>
-                    <h2 id="page-title" class="page-title">แดชบอร์ด</h2>
+                    <h1 class="page-title" id="page-title">แดชบอร์ด</h1>
                 </div>
                 <div class="topbar-right">
-                    <div class="sync-status" id="sync-status" title="สถานะการเชื่อมต่อ">
-                        <span class="sync-dot" id="sync-dot"></span>
-                        <span class="sync-text" id="sync-text">ออฟไลน์</span>
+                    <div class="search-box">
+                        <span class="material-icons-round">search</span>
+                        <input type="text" id="global-search" placeholder="ค้นหางานซ่อม..." onkeyup="handleSearch(event)">
+                        <span class="search-kbd">Ctrl+K</span>
                     </div>
-                    <div class="search-box" id="search-container">
-                        <span class="material-icons-round search-icon">search</span>
-                        <input type="text" id="global-search" placeholder="ค้นหางานซ่อม..." autocomplete="off">
-                        <kbd class="search-shortcut">Ctrl+K</kbd>
+                    <div class="sync-status" id="sync-status" onclick="manualSync()" style="cursor:pointer; padding:6px 10px; border-radius:6px" title="คลิกเพื่อซิงค์ข้อมูล">
+                        <span class="sync-dot offline" id="sync-dot"></span>
+                        <span id="sync-text">ออฟไลน์</span>
+                        <span class="material-icons-round sync-icon" style="font-size:16px;margin-left:4px">sync</span>
                     </div>
-                    <div class="topbar-date">
-                        <span class="material-icons-round">calendar_today</span>
-                        <span id="current-date"></span>
-                    </div>
+                    <div class="topbar-date" id="topbar-date"></div>
                 </div>
             </header>
 
-            <!-- Page Content Container -->
-            <div id="page-content" class="page-content">
-                <!-- Dashboard Page -->
-                <section id="page-dashboard" class="page active">
+            <!-- Page Content -->
+            <div class="page-content" id="page-content">
+
+                <!-- ==================== Dashboard ==================== -->
+                <section id="page-dashboard" class="page-section active">
                     <div class="stats-grid" id="stats-grid">
-                        <!-- Stats cards rendered by JS -->
+                        <!-- Rendered by JS -->
                     </div>
-                    <div class="dashboard-grid">
-                        <div class="card chart-card" id="monthly-chart-card">
-                            <div class="card-header">
-                                <h3><span class="material-icons-round">trending_up</span> สรุปงานซ่อมรายเดือน</h3>
+
+                    <div class="charts-grid">
+                        <div class="chart-card full-width">
+                            <div class="chart-header">
+                                <div class="chart-title">
+                                    <span class="material-icons-round">show_chart</span>
+                                    แนวโน้มงานซ่อมรายเดือน
+                                </div>
+                                <div class="chart-controls">
+                                    <select class="filter-select" id="monthly-chart-type" onchange="updateMonthlyChart()">
+                                        <option value="line">กราฟเส้น</option>
+                                        <option value="bar">กราฟแท่ง</option>
+                                    </select>
+                                </div>
                             </div>
-                            <div class="card-body">
-                                <canvas id="monthly-chart"></canvas>
+                            <div class="chart-canvas-container">
+                                <canvas id="monthly-trend-chart"></canvas>
                             </div>
                         </div>
-                        <div class="card recent-card" id="recent-activity-card">
-                            <div class="card-header">
-                                <h3><span class="material-icons-round">schedule</span> งานล่าสุด</h3>
+
+                        <div class="chart-card">
+                            <div class="chart-header">
+                                <div class="chart-title">
+                                    <span class="material-icons-round">donut_large</span>
+                                    สถานะงานซ่อม
+                                </div>
                             </div>
-                            <div class="card-body" id="recent-activity">
-                                <!-- rendered by JS -->
+                            <div class="chart-canvas-container">
+                                <canvas id="status-donut-chart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="chart-card">
+                            <div class="chart-header">
+                                <div class="chart-title">
+                                    <span class="material-icons-round">category</span>
+                                    ประเภทงานซ่อม
+                                </div>
+                            </div>
+                            <div class="chart-canvas-container">
+                                <canvas id="type-bar-chart"></canvas>
                             </div>
                         </div>
                     </div>
-                    <div class="dashboard-grid mt-20">
-                        <div class="card" id="status-pie-card">
-                            <div class="card-header">
-                                <h3><span class="material-icons-round">donut_large</span> สถานะงาน</h3>
-                            </div>
-                            <div class="card-body chart-body-sm">
-                                <canvas id="status-chart"></canvas>
-                            </div>
+
+                    <div class="recent-card">
+                        <div class="recent-header">
+                            <span class="material-icons-round">schedule</span>
+                            งานล่าสุด
                         </div>
-                        <div class="card" id="type-bar-card">
-                            <div class="card-header">
-                                <h3><span class="material-icons-round">category</span> ประเภทงานซ่อม</h3>
-                            </div>
-                            <div class="card-body chart-body-sm">
-                                <canvas id="type-chart"></canvas>
-                            </div>
-                        </div>
+                        <ul class="recent-list" id="recent-list">
+                            <!-- Rendered by JS -->
+                        </ul>
                     </div>
                 </section>
 
-                <!-- Planned Repairs Page -->
-                <section id="page-planned" class="page">
-                    <div class="page-actions">
+                <!-- ==================== Repairs List ==================== -->
+                <section id="page-repairs" class="page-section">
+                    <div class="page-toolbar">
                         <div class="filter-group">
-                            <select id="planned-filter-status" class="filter-select">
+                            <select class="filter-select" id="filter-status" onchange="filterRepairs()">
                                 <option value="">สถานะทั้งหมด</option>
-                                <option value="เสร็จสิ้น">เสร็จสิ้น</option>
-                                <option value="กำลังดำเนินการ">กำลังดำเนินการ</option>
+                                <option value="เรียบร้อย">เรียบร้อย</option>
                                 <option value="รอดำเนินการ">รอดำเนินการ</option>
+                                <option value="กำลังดำเนินการ">กำลังดำเนินการ</option>
+                                <option value="โอนย้าย">โอนย้าย</option>
                             </select>
-                            <select id="planned-filter-type" class="filter-select">
+                            <select class="filter-select" id="filter-type" onchange="filterRepairs()">
                                 <option value="">ประเภททั้งหมด</option>
                             </select>
-                            <select id="planned-filter-month" class="filter-select">
-                                <option value="">เดือนทั้งหมด</option>
+                            <select class="filter-select" id="filter-dept" onchange="filterRepairs()">
+                                <option value="">ฝ่ายทั้งหมด</option>
                             </select>
                         </div>
-                        <button class="btn btn-primary" id="add-planned-btn">
+                        <button class="btn btn-primary" onclick="openAddModal()" style="margin-left:auto;">
                             <span class="material-icons-round">add</span>
                             เพิ่มงานซ่อม
                         </button>
                     </div>
                     <div class="table-container">
-                        <table class="data-table" id="planned-table">
-                            <thead>
-                                <tr>
-                                    <th class="sortable" data-sort="รหัสงานซ่อม">รหัส <span class="sort-icon material-icons-round">unfold_more</span></th>
-                                    <th class="sortable" data-sort="หัวข้อ">หัวข้อ <span class="sort-icon material-icons-round">unfold_more</span></th>
-                                    <th>ชั้น</th>
-                                    <th>ประเภท</th>
-                                    <th>ตำแหน่ง</th>
-                                    <th>ความสำคัญ</th>
-                                    <th class="sortable" data-sort="สำเร็จ">สถานะ <span class="sort-icon material-icons-round">unfold_more</span></th>
-                                    <th>เดือน</th>
-                                    <th class="actions-col">จัดการ</th>
-                                </tr>
-                            </thead>
-                            <tbody id="planned-tbody">
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="pagination" id="planned-pagination"></div>
-                </section>
-
-                <!-- Repair Requests Page -->
-                <section id="page-requests" class="page">
-                    <div class="page-actions">
-                        <div class="filter-group">
-                            <select id="requests-filter-status" class="filter-select">
-                                <option value="">สถานะทั้งหมด</option>
-                                <option value="เรียบร้อย">เรียบร้อย</option>
-                                <option value="กำลังดำเนินการ">กำลังดำเนินการ</option>
-                                <option value="รอดำเนินการ">รอดำเนินการ</option>
-                                <option value="โอนย้าย">โอนย้าย</option>
-                            </select>
+                        <div class="table-scroll">
+                            <table class="data-table" id="repairs-table">
+                                <thead>
+                                    <tr>
+                                        <th class="sortable" onclick="sortRepairs('order')">ลำดับ</th>
+                                        <th class="sortable" onclick="sortRepairs('subject')">เรื่อง</th>
+                                        <th>ฝ่าย</th>
+                                        <th>ชั้น</th>
+                                        <th>ประเภท</th>
+                                        <th>ตำแหน่ง</th>
+                                        <th class="sortable" onclick="sortRepairs('status')">สถานะ</th>
+                                        <th>รูปภาพ</th>
+                                        <th>จัดการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="repairs-tbody">
+                                    <!-- Rendered by JS -->
+                                </tbody>
+                            </table>
                         </div>
-                        <button class="btn btn-primary" id="add-request-btn">
-                            <span class="material-icons-round">add</span>
-                            เพิ่มการแจ้งซ่อม
-                        </button>
-                    </div>
-                    <div class="table-container">
-                        <table class="data-table" id="requests-table">
-                            <thead>
-                                <tr>
-                                    <th>ลำดับ</th>
-                                    <th>ชื่อผู้แจ้ง</th>
-                                    <th>แจ้งผ่าน</th>
-                                    <th>เรื่อง</th>
-                                    <th>ชั้น</th>
-                                    <th>ประเภท</th>
-                                    <th>ตำแหน่ง</th>
-                                    <th>สถานะ</th>
-                                    <th>วันที่แจ้ง</th>
-                                    <th class="actions-col">จัดการ</th>
-                                </tr>
-                            </thead>
-                            <tbody id="requests-tbody">
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="pagination" id="requests-pagination"></div>
-                </section>
-
-                <!-- Warehouse Page -->
-                <section id="page-warehouse" class="page">
-                    <div class="page-actions">
-                        <div class="filter-group">
-                            <select id="warehouse-filter-status" class="filter-select">
-                                <option value="">สถานะทั้งหมด</option>
-                                <option value="สำเร็จ">สำเร็จ</option>
-                                <option value="กำลังดำเนินการ">กำลังดำเนินการ</option>
-                                <option value="รอดำเนินการ">รอดำเนินการ</option>
-                            </select>
-                            <select id="warehouse-filter-urgency" class="filter-select">
-                                <option value="">ความเร่งด่วนทั้งหมด</option>
-                                <option value="เร่งด่วน">เร่งด่วน</option>
-                                <option value="ไม่เร่งด่วน">ไม่เร่งด่วน</option>
-                            </select>
+                        <div class="pagination" id="repairs-pagination">
+                            <!-- Rendered by JS -->
                         </div>
-                        <button class="btn btn-primary" id="add-warehouse-btn">
-                            <span class="material-icons-round">add</span>
-                            เพิ่มงาน
-                        </button>
-                    </div>
-                    <div class="table-container">
-                        <table class="data-table" id="warehouse-table">
-                            <thead>
-                                <tr>
-                                    <th>ลำดับ</th>
-                                    <th>วันที่แจ้ง</th>
-                                    <th>เดือน</th>
-                                    <th>ผู้แจ้ง</th>
-                                    <th>ฝ่าย</th>
-                                    <th>ชั้น</th>
-                                    <th>รายละเอียด</th>
-                                    <th>ประเภท</th>
-                                    <th>สถานะ</th>
-                                    <th>ความเร่งด่วน</th>
-                                    <th class="actions-col">จัดการ</th>
-                                </tr>
-                            </thead>
-                            <tbody id="warehouse-tbody">
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="pagination" id="warehouse-pagination"></div>
-                </section>
-
-                <!-- Leaks Page -->
-                <section id="page-leaks" class="page">
-                    <div class="page-actions">
-                        <div class="filter-group"></div>
-                        <button class="btn btn-primary" id="add-leak-btn">
-                            <span class="material-icons-round">add</span>
-                            เพิ่มตำแหน่งน้ำรั่ว
-                        </button>
-                    </div>
-                    <div class="cards-grid" id="leaks-grid">
                     </div>
                 </section>
 
-                <!-- Curtains Page -->
-                <section id="page-curtains" class="page">
-                    <div class="page-actions">
-                        <div class="filter-group">
-                            <select id="curtains-filter-status" class="filter-select">
-                                <option value="">สถานะทั้งหมด</option>
-                                <option value="ปกติ">ปกติ</option>
-                                <option value="เสีย">เสีย</option>
-                            </select>
-                        </div>
-                        <button class="btn btn-primary" id="add-curtain-btn">
-                            <span class="material-icons-round">add</span>
-                            เพิ่มรายการม่าน
-                        </button>
+                <!-- ==================== Weekly Summary ==================== -->
+                <section id="page-weekly" class="page-section">
+                    <div class="month-tabs" id="weekly-month-tabs">
+                        <!-- Rendered by JS -->
                     </div>
-                    <div class="table-container">
-                        <table class="data-table" id="curtains-table">
-                            <thead>
-                                <tr>
-                                    <th>ลำดับ</th>
-                                    <th>อุปกรณ์</th>
-                                    <th>ตำแหน่ง</th>
-                                    <th>ชั้น</th>
-                                    <th>สถานะ</th>
-                                    <th>รายละเอียด</th>
-                                    <th>ตำแหน่งห้อง</th>
-                                    <th class="actions-col">จัดการ</th>
-                                </tr>
-                            </thead>
-                            <tbody id="curtains-tbody">
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
 
-                <!-- Monthly Summary Page -->
-                <section id="page-monthly" class="page">
-                    <div class="monthly-charts-grid">
-                        <div class="card">
-                            <div class="card-header">
-                                <h3><span class="material-icons-round">show_chart</span> แนวโน้มงานซ่อมรายเดือน</h3>
+                    <div class="charts-grid">
+                        <div class="chart-card full-width">
+                            <div class="chart-header">
+                                <div class="chart-title">
+                                    <span class="material-icons-round">bar_chart</span>
+                                    สรุปงานซ่อมรายสัปดาห์
+                                </div>
                             </div>
-                            <div class="card-body">
-                                <canvas id="monthly-detail-chart"></canvas>
+                            <div class="chart-canvas-container">
+                                <canvas id="weekly-chart"></canvas>
                             </div>
                         </div>
                     </div>
-                    <div class="table-container mt-20">
-                        <table class="data-table" id="monthly-table">
-                            <thead>
-                                <tr>
-                                    <th>เดือน</th>
-                                    <th>งานทั้งหมด</th>
-                                    <th>เสร็จ</th>
-                                    <th>รอดำเนินการ</th>
-                                    <th>งานสะสม</th>
-                                </tr>
-                            </thead>
-                            <tbody id="monthly-tbody">
-                            </tbody>
-                        </table>
+
+                    <div class="table-container" style="margin-top:16px;">
+                        <div class="table-scroll">
+                            <table class="summary-table" id="weekly-table">
+                                <thead>
+                                    <tr>
+                                        <th>สัปดาห์</th>
+                                        <th>แจ้งซ่อม</th>
+                                        <th>สำเร็จ</th>
+                                        <th>คงค้าง</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="weekly-tbody">
+                                    <!-- Rendered by JS -->
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </section>
-            </div>
+
+                <!-- ==================== Monthly Analysis ==================== -->
+                <section id="page-analysis" class="page-section">
+                    <div class="month-tabs" id="analysis-month-tabs">
+                        <!-- Rendered by JS -->
+                    </div>
+
+                    <div class="charts-grid">
+                        <div class="chart-card">
+                            <div class="chart-header">
+                                <div class="chart-title">
+                                    <span class="material-icons-round">pie_chart</span>
+                                    ประเภทงานซ่อม
+                                </div>
+                            </div>
+                            <div class="chart-canvas-container">
+                                <canvas id="analysis-type-chart"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-card">
+                            <div class="chart-header">
+                                <div class="chart-title">
+                                    <span class="material-icons-round">groups</span>
+                                    แจ้งซ่อมตามฝ่าย
+                                </div>
+                            </div>
+                            <div class="chart-canvas-container">
+                                <canvas id="analysis-dept-chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="analysis-grid" id="analysis-dept-grid" style="margin-top:16px;">
+                        <!-- Rendered by JS -->
+                    </div>
+                </section>
+
+            </div><!-- /page-content -->
         </main>
-    </div>
+    </div><!-- /app -->
 
-    <!-- Modal Overlay -->
-    <div id="modal-overlay" class="modal-overlay hidden">
-        <div id="modal" class="modal">
+    <!-- ==================== Modal: Add/Edit Repair ==================== -->
+    <div class="modal-overlay" id="repair-modal">
+        <div class="modal-panel">
             <div class="modal-header">
-                <h3 id="modal-title">เพิ่มข้อมูล</h3>
-                <button id="modal-close" class="modal-close-btn">
-                    <span class="material-icons-round">close</span>
-                </button>
-            </div>
-            <div class="modal-body" id="modal-body">
-                <!-- Dynamic form rendered by JS -->
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-ghost" id="modal-cancel-btn">ยกเลิก</button>
-                <button class="btn btn-primary" id="modal-save-btn">บันทึก</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Confirm Dialog -->
-    <div id="confirm-overlay" class="modal-overlay hidden">
-        <div class="modal modal-sm">
-            <div class="modal-header">
-                <h3 id="confirm-title">ยืนยันการลบ</h3>
-                <button class="modal-close-btn" id="confirm-close">
+                <h2 class="modal-title" id="modal-title">เพิ่มงานซ่อม</h2>
+                <button class="modal-close" onclick="closeModal()">
                     <span class="material-icons-round">close</span>
                 </button>
             </div>
             <div class="modal-body">
-                <p id="confirm-message" class="confirm-message">คุณต้องการลบรายการนี้หรือไม่?</p>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-ghost" id="confirm-cancel-btn">ยกเลิก</button>
-                <button class="btn btn-danger" id="confirm-ok-btn">ลบ</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Toast Notifications -->
-    <div id="toast-container" class="toast-container"></div>
-
-    <!-- Move Modal -->
-    <div id="move-overlay" class="modal-overlay hidden">
-        <div class="modal modal-sm">
-            <div class="modal-header">
-                <h3>โอนย้ายงาน</h3>
-                <button class="modal-close-btn" id="move-close">
-                    <span class="material-icons-round">close</span>
-                </button>
-            </div>
-            <div class="modal-body">
-                <p class="move-info" id="move-info"></p>
+                <input type="hidden" id="edit-index" value="-1">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">ชื่อผู้แจ้ง</label>
+                        <input type="text" class="form-input" id="field-reporter" placeholder="ชื่อผู้แจ้งซ่อม">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">ฝ่าย</label>
+                        <select class="form-select" id="field-department">
+                            <option value="">เลือกฝ่าย</option>
+                            <option value="อาคาร/รีเซป">อาคาร/รีเซป</option>
+                            <option value="ตรวจสอบ">ตรวจสอบ</option>
+                            <option value="แม่บ้าน">แม่บ้าน</option>
+                            <option value="บัญชี">บัญชี</option>
+                            <option value="ธุรการ/การตลาด">ธุรการ/การตลาด</option>
+                            <option value="การเงิน">การเงิน</option>
+                            <option value="จัดซื้อ">จัดซื้อ</option>
+                            <option value="ไอทีซัพพอร์ต">ไอทีซัพพอร์ต</option>
+                            <option value="โปรแกรมเมอร์">โปรแกรมเมอร์</option>
+                            <option value="หนี้สิน">หนี้สิน</option>
+                            <option value="เลขา">เลขา</option>
+                            <option value="บุคคล">บุคคล</option>
+                            <option value="บริหาร">บริหาร</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">แจ้งผ่าน</label>
+                        <select class="form-select" id="field-channel">
+                            <option value="Line">Line</option>
+                            <option value="ส่วนตัว">ส่วนตัว</option>
+                            <option value="Helpdesk">Helpdesk</option>
+                            <option value="โทรศัพท์">โทรศัพท์</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">ชั้น</label>
+                        <input type="text" class="form-input" id="field-floor" placeholder="G, 1, 2...">
+                    </div>
+                </div>
                 <div class="form-group">
-                    <label>ย้ายไปยัง</label>
-                    <select id="move-destination" class="form-input">
-                        <option value="planned">งานซ่อมตามแผน</option>
-                        <option value="requests">แจ้งซ่อมเพิ่มเติม</option>
-                        <option value="warehouse">คลังงานซ่อม</option>
-                    </select>
+                    <label class="form-label">เรื่อง</label>
+                    <input type="text" class="form-input" id="field-subject" placeholder="รายละเอียดงานซ่อม">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">ประเภท</label>
+                        <select class="form-select" id="field-type">
+                            <option value="ไฟฟ้า">ไฟฟ้า</option>
+                            <option value="สุขภัณฑ์">สุขภัณฑ์</option>
+                            <option value="ประปา">ประปา</option>
+                            <option value="ระบบแอร์">ระบบแอร์</option>
+                            <option value="ม่าน">ม่าน</option>
+                            <option value="เก้าอี้">เก้าอี้</option>
+                            <option value="ประตู">ประตู</option>
+                            <option value="อุปกรณ์">อุปกรณ์</option>
+                            <option value="ขอบคิ้ว">ขอบคิ้ว</option>
+                            <option value="อื่นๆ">อื่นๆ</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">ตำแหน่ง</label>
+                        <input type="text" class="form-input" id="field-location" placeholder="ตำแหน่งงาน">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">สถานะ</label>
+                        <select class="form-select" id="field-status">
+                            <option value="รอดำเนินการ">รอดำเนินการ</option>
+                            <option value="กำลังดำเนินการ">กำลังดำเนินการ</option>
+                            <option value="เรียบร้อย">เรียบร้อย</option>
+                            <option value="โอนย้าย">โอนย้าย</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">วันที่แจ้ง</label>
+                        <input type="date" class="form-input" id="field-date-reported">
+                    </div>
+                </div>
+                <!-- Photo Upload -->
+                <div class="form-group">
+                    <label class="form-label">รูปภาพ</label>
+                    <div class="photo-upload-zone" id="photo-upload-zone" onclick="document.getElementById('photo-input').click()">
+                        <span class="material-icons-round">add_photo_alternate</span>
+                        <p>คลิกหรือลากรูปภาพมาวางที่นี่</p>
+                        <span class="upload-hint">รองรับ JPG, PNG, WEBP (สูงสุด 5MB ต่อรูป)</span>
+                    </div>
+                    <input type="file" id="photo-input" accept="image/*" multiple style="display:none" onchange="handlePhotoUpload(event)">
+                    <div class="photo-gallery" id="photo-gallery">
+                        <!-- Rendered by JS -->
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-ghost" id="move-cancel-btn">ยกเลิก</button>
-                <button class="btn btn-primary" id="move-ok-btn">
-                    <span class="material-icons-round">drive_file_move</span>
-                    ย้ายงาน
+                <button class="btn btn-ghost" onclick="closeModal()">ยกเลิก</button>
+                <button class="btn btn-primary" onclick="saveRepair()" id="modal-save-btn">
+                    <span class="material-icons-round">save</span>
+                    บันทึก
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- Change Database Modal -->
-    <div id="changedb-overlay" class="modal-overlay hidden">
-        <div class="modal modal-sm">
-            <div class="modal-header">
-                <h3>เปลี่ยนฐานข้อมูล</h3>
-                <button class="modal-close-btn" id="changedb-close">
-                    <span class="material-icons-round">close</span>
-                </button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label>Spreadsheet ID ใหม่</label>
-                    <input type="text" id="changedb-sheet-id" class="form-input" placeholder="วาง Spreadsheet ID ที่นี่">
-                    <small class="login-hint" style="margin-top:6px;display:block;">จาก URL: docs.google.com/spreadsheets/d/<strong>[ID]</strong>/edit</small>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-ghost" id="changedb-cancel-btn">ยกเลิก</button>
-                <button class="btn btn-primary" id="changedb-ok-btn">
-                    <span class="material-icons-round">swap_horiz</span>
-                    เปลี่ยน
+    <!-- ==================== Confirm Dialog ==================== -->
+    <div class="confirm-overlay" id="confirm-dialog">
+        <div class="confirm-dialog">
+            <span class="material-icons-round confirm-icon">warning</span>
+            <h3 class="confirm-title" id="confirm-title">ยืนยันการลบ</h3>
+            <p class="confirm-text" id="confirm-text">คุณต้องการลบรายการนี้หรือไม่?</p>
+            <div class="confirm-actions">
+                <button class="btn btn-ghost" onclick="closeConfirm()">ยกเลิก</button>
+                <button class="btn btn-danger" id="confirm-ok-btn" onclick="confirmAction()">
+                    <span class="material-icons-round">delete</span>
+                    ลบ
                 </button>
             </div>
         </div>
     </div>
 
+    <!-- ==================== Lightbox ==================== -->
+    <div class="lightbox" id="lightbox">
+        <button class="lightbox-close" onclick="closeLightbox()">
+            <span class="material-icons-round">close</span>
+        </button>
+        <button class="lightbox-nav prev" onclick="lightboxPrev()">
+            <span class="material-icons-round">chevron_left</span>
+        </button>
+        <img id="lightbox-img" src="" alt="Photo">
+        <button class="lightbox-nav next" onclick="lightboxNext()">
+            <span class="material-icons-round">chevron_right</span>
+        </button>
+    </div>
+
+    <!-- Toast Container -->
+    <!-- Scripts -->
     <script src="chart.umd.min.js"></script>
-    <script src="google-sheets.js"></script>
+    <!-- ExcelJS & FileSaver for Template-based Excel Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-polyfill/7.12.1/polyfill.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script src="app.js"></script>
-    <script>
-        // Load Google API scripts asynchronously — don't block the page
-        (function() {
-            function loadScript(src, id) {
-                return new Promise((resolve) => {
-                    const s = document.createElement('script');
-                    s.src = src;
-                    s.id = id;
-                    s.async = true;
-                    s.onload = resolve;
-                    s.onerror = () => {
-                        console.warn('Failed to load: ' + src);
-                        resolve(); // resolve anyway so offline mode works
-                    };
-                    document.head.appendChild(s);
-                });
-            }
-            // Load both in parallel, but don't block the page
-            Promise.all([
-                loadScript('https://apis.google.com/js/api.js', 'gapi-script'),
-                loadScript('https://accounts.google.com/gsi/client', 'gis-script')
-            ]).then(() => {
-                window.googleApisLoaded = true;
-                console.log('Google API scripts loaded (or skipped)');
-            });
-        })();
-    </script>
 </body>
 </html>
-

@@ -1,805 +1,412 @@
- /**
- * MTC Maintenance Management System
+/**
+ * MTC Maintenance Management System v3.0
  * ระบบจัดการงานซ่อมบำรุง MTC
  * 
- * Main Application JavaScript
- * v2.0 — Google Sheets Integration
+ * Blue-White-Yellow Liquid Glass Theme
+ * Data from visible sheets only
  */
 
 // ========================================
 // Global State
 // ========================================
-let appInitialized = false; 
-let loadingTimeout = null;
-
 const AppState = {
-    data: {
-        planned: [],
-        requests: [],
-        warehouse: [],
-        monthly: [],
-        leaks: [],
-        curtains: [],
-        summary: {}
-    },
+    data: { repairs: [], weekly: [], analysis: [], summary: {} },
     currentPage: 'dashboard',
-    sidebarCollapsed: false,
-    pagination: {
-        planned: { page: 1, perPage: 15 },
-        requests: { page: 1, perPage: 15 },
-        warehouse: { page: 1, perPage: 15 }
-    },
+    pagination: { page: 1, perPage: 15 },
+    filters: { status: '', type: '', department: '' },
+    sort: { field: 'order', direction: 'asc' },
+    editPhotos: [],
     charts: {},
-    searchQuery: '',
-    editingItem: null,
-    editingSource: null,
-    isOnline: false,
-    useGoogleSheets: false,
-    modalOpen: false
+    selectedWeeklyMonth: null,
+    selectedAnalysisMonth: null,
+    confirmCallback: null,
+    lightboxPhotos: [],
+    lightboxIndex: 0,
+    sheetUrl: '',
+    syncChannel: null,
+};
+
+const STORAGE_KEY = 'mtc_app_data_v3.1';
+const THAI_MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
+                     'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+
+const PAGE_TITLES = {
+    dashboard: 'แดชบอร์ด',
+    repairs: 'รายการงานซ่อมทั้งหมด',
+    weekly: 'สรุปรายสัปดาห์',
+    analysis: 'วิเคราะห์รายเดือน',
+};
+
+const STATUS_MAP = {
+    'เรียบร้อย': { class: 'completed', icon: 'check_circle' },
+    'รอดำเนินการ': { class: 'pending', icon: 'pending' },
+    'กำลังดำเนินการ': { class: 'in-progress', icon: 'autorenew' },
+    'โอนย้าย': { class: 'transferred', icon: 'swap_horiz' },
+};
+
+const CHART_COLORS = {
+    blue: '#3B82F6', blueBg: 'rgba(59,130,246,0.15)',
+    green: '#22C55E', greenBg: 'rgba(34,197,94,0.15)',
+    amber: '#F59E0B', amberBg: 'rgba(245,158,11,0.15)',
+    red: '#EF4444', redBg: 'rgba(239,68,68,0.15)',
+    purple: '#A855F7', purpleBg: 'rgba(168,85,247,0.15)',
+    slate: '#64748B',
 };
 
 // ========================================
 // Initialization
 // ========================================
 document.addEventListener('DOMContentLoaded', () => {
-    initLoginScreen();
+    initApp();
 });
 
-function initLoginScreen() {
-    const savedConfig = JSON.parse(localStorage.getItem('mtc_gsheet_config') || '{}');
-
-    // Pre-fill saved config
-    const clientIdInput = document.getElementById('login-client-id');
-    const sheetIdInput = document.getElementById('login-sheet-id');
-    if (savedConfig.clientId) clientIdInput.value = savedConfig.clientId;
-    if (savedConfig.spreadsheetId) sheetIdInput.value = savedConfig.spreadsheetId;
-
-    // Google Sign-In button
-    document.getElementById('login-google-btn').addEventListener('click', async () => {
-        const clientId = clientIdInput.value.trim();
-        const sheetId = sheetIdInput.value.trim();
-
-        if (!clientId) {
-            showToast('กรุณากรอก Google Client ID', 'warning');
-            clientIdInput.focus();
-            return;
-        }
-        if (!sheetId) {
-            showToast('กรุณากรอก Spreadsheet ID', 'warning');
-            sheetIdInput.focus();
-            return;
-        }
-
-        // Wait for Google API scripts with polling (max 10 seconds)
-        if (typeof gapi === 'undefined' || typeof google === 'undefined' || !google.accounts) {
-            showToast('กำลังโหลด Google API...', 'info');
-            const maxWait = 10000;
-            const pollInterval = 500;
-            let waited = 0;
-            while (waited < maxWait) {
-                await new Promise(r => setTimeout(r, pollInterval));
-                waited += pollInterval;
-                if (typeof gapi !== 'undefined' && typeof google !== 'undefined' && google.accounts) {
-                    break;
-                }
-            }
-            if (typeof gapi === 'undefined' || typeof google === 'undefined' || !google.accounts) {
-                showToast('ไม่สามารถโหลด Google API ได้ ตรวจสอบการเชื่อมต่ออินเทอร์เน็ต', 'error');
-                return;
-            }
-        }
-
-        // Save config
-        if (document.getElementById('login-remember').checked) {
-            localStorage.setItem('mtc_gsheet_config', JSON.stringify({
-                clientId: clientId,
-                spreadsheetId: sheetId
-            }));
-        }
-
-        AppState.useGoogleSheets = true;
-        showLoadingScreen('กำลังเชื่อมต่อ Google...');
-
-        try {
-            const success = await GoogleSheetsDB.init({
-                clientId: clientId,
-                spreadsheetId: sheetId,
-                onAuthChange: handleAuthChange,
-                onDataRefresh: handleDataRefresh,
-                onConnectionChange: handleConnectionChange,
-                onError: (msg) => showToast(msg, 'error')
-            });
-
-            if (success) {
-                startLoadingTimeout();
-                GoogleSheetsDB.signIn();
-            } else {
-                showToast('ไม่สามารถเริ่มต้น Google API ได้', 'error');
-                showLoginScreen();
-            }
-        } catch (err) {
-            console.error('Login error:', err);
-            showToast('เกิดข้อผิดพลาดในการเข้าสู่ระบบ', 'error');
-            showLoginScreen();
-        }
-    });
-
-    // Offline mode button
-    document.getElementById('login-offline-btn').addEventListener('click', async () => {
-        AppState.useGoogleSheets = false;
-        showLoadingScreen('กำลังโหลดข้อมูลออฟไลน์...');
-        await loadDataOffline();
-        initApp();
-    });
-}
-
-async function handleAuthChange(isSignedIn, user) {
-    if (isSignedIn) {
-        updateUserDisplay(user);
-        updateLoadingStatus('กำลังโหลดข้อมูลจาก Google Sheets...');
-
-        try {
-            const result = await GoogleSheetsDB.loadAllData();
-            AppState.data = result.data;
-            recalculateSummary();
-            initApp();
-            GoogleSheetsDB.startAutoRefresh(30000);
-            showToast('เชื่อมต่อ Google Sheets สำเร็จ', 'success');
-        } catch (err) {
-            console.error('Failed to load from Google Sheets:', err);
-            showToast('ไม่สามารถโหลดข้อมูลจาก Google Sheets ได้ ใช้ข้อมูลออฟไลน์แทน', 'warning');
-            await loadDataOffline();
-            initApp();
-        }
-    } else {
-        showLoginScreen();
-    }
-}
-
-function handleDataRefresh(data) {
-    // Guard: don't overwrite data while user has modal open
-    if (AppState.modalOpen) {
-        console.log('Auto-refresh skipped: modal is open');
-        return;
-    }
-    AppState.data = data;
-    recalculateSummary();
-    renderPage(AppState.currentPage);
-    updateSyncStatus('synced');
-}
-
-function handleConnectionChange(isConnected) {
-    AppState.isOnline = isConnected;
-    updateConnectionUI(isConnected);
-}
-
-function showLoginScreen() {
-    document.getElementById('login-screen').classList.remove('hidden');
-    document.getElementById('loading-screen').classList.add('hidden');
-    document.getElementById('app').classList.add('hidden');
-}
-
-function showLoadingScreen(status) {
-    document.getElementById('login-screen').classList.add('hidden');
-    document.getElementById('loading-screen').classList.remove('hidden');
-    document.getElementById('loading-screen').classList.remove('fade-out');
-    document.getElementById('app').classList.add('hidden');
-    updateLoadingStatus(status || 'กำลังโหลดข้อมูล...');
-    // Hide retry buttons when loading starts
-    const actions = document.getElementById('loading-actions');
-    if (actions) actions.classList.remove('visible');
-}
-
-function updateLoadingStatus(text) {
-    const el = document.getElementById('loading-status');
-    if (el) el.textContent = text;
-}
-
-function startLoadingTimeout() {
-    clearLoadingTimeout();
-    loadingTimeout = setTimeout(() => {
-        // If loading screen is still visible, show retry buttons
-        const loadingScreen = document.getElementById('loading-screen');
-        if (loadingScreen && !loadingScreen.classList.contains('hidden')) {
-            updateLoadingStatus('การเชื่อมต่อใช้เวลานาน...');
-            const actions = document.getElementById('loading-actions');
-            if (actions) actions.classList.add('visible');
-        }
-    }, 15000); // 15 seconds timeout
-
-    // Wire up retry and offline buttons
-    const retryBtn = document.getElementById('loading-retry-btn');
-    const offlineBtn = document.getElementById('loading-offline-btn');
-
-    if (retryBtn) {
-        retryBtn.onclick = () => {
-            clearLoadingTimeout();
-            showLoginScreen();
-            showToast('กรุณาลองเข้าสู่ระบบอีกครั้ง', 'info');
-        };
-    }
-    if (offlineBtn) {
-        offlineBtn.onclick = async () => {
-            clearLoadingTimeout();
-            AppState.useGoogleSheets = false;
-            showLoadingScreen('กำลังโหลดข้อมูลออฟไลน์...');
-            await loadDataOffline();
-            initApp();
-        };
-    }
-}
-
-function clearLoadingTimeout() {
-    if (loadingTimeout) {
-        clearTimeout(loadingTimeout);
-        loadingTimeout = null;
-    }
-}
-
-function initApp() {
-    clearLoadingTimeout();
-
-    // Prevent duplicate event listener attachment
-    if (!appInitialized) {
-        initNavigation();
-        initSidebar();
-        initSearch();
-        initModals();
-        initSettingsPanel();
-        initDate();
-        appInitialized = true;
-    }
-
-    renderDashboard();
-
-    // Transition from loading to app
-    setTimeout(() => {
-        const loadingScreen = document.getElementById('loading-screen');
-        loadingScreen.classList.add('fade-out');
-        document.getElementById('app').classList.remove('hidden');
-        setTimeout(() => {
-            loadingScreen.classList.add('hidden');
-        }, 500);
-    }, 800);
-}
-
-// ========================================
-// Data Loading
-// ========================================
-async function loadDataOffline() {
-    // Try localStorage first
-    const saved = localStorage.getItem('mtc_data');
+async function initApp() {
+    updateDate();
+    // Try loading from localStorage first
+    const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
         try {
             AppState.data = JSON.parse(saved);
-            return;
-        } catch (e) {
-            console.warn('Failed to parse saved data');
-        }
+        } catch (e) { /* fallback to fetch */ }
     }
 
-    // Fallback to data.json
+    // Always try to load fresh data.json
     try {
-        const response = await fetch('data.json');
-        const data = await response.json();
-        AppState.data = { ...AppState.data, ...data };
-    } catch (error) {
-        console.error('Failed to load data:', error);
-        showToast('ไม่สามารถโหลดข้อมูลได้', 'error');
-    }
-}
-
-async function saveData() {
-    // Always save to localStorage as cache
-    localStorage.setItem('mtc_data', JSON.stringify(AppState.data));
-
-    // If online, sync summary to Google Sheets
-    if (AppState.useGoogleSheets && AppState.isOnline) {
-        try {
-            await GoogleSheetsDB.updateSummary(AppState.data.summary);
-        } catch (err) {
-            console.warn('Failed to sync summary:', err);
+        const res = await fetch('data.json');
+        if (res.ok) {
+            const fresh = await res.json();
+            // Only overwrite if localStorage had no data
+            if (!saved) {
+                AppState.data = fresh;
+                persistData();
+            } else {
+                // Always update read-only sections from fresh data.json to get latest extraction
+                AppState.data.weekly = fresh.weekly;
+                AppState.data.analysis = fresh.analysis;
+                
+                // Merge summary if missing
+                if (!AppState.data.summary || !AppState.data.summary.total) {
+                    AppState.data.summary = fresh.summary;
+                }
+                
+                // Persist the updated weekly/analysis to localStorage
+                persistData();
+            }
         }
-        updateSyncStatus('synced');
+    } catch (e) {
+        console.warn('Could not load data.json:', e);
     }
 
-    showToast('บันทึกข้อมูลสำเร็จ', 'success');
+    // Recompute summary from repairs
+    recomputeSummary();
+
+    // Setup BroadcastChannel for real-time cross-tab sync
+    setupBroadcastChannel();
+
+    // Setup keyboard shortcuts
+    document.addEventListener('keydown', handleKeyDown);
+
+    // Populate filter dropdowns
+    populateFilterDropdowns();
+
+    // Hide loading and show appropriate screen
+    setTimeout(() => {
+        document.getElementById('loading-screen').classList.add('hidden');
+        
+        const savedUrl = localStorage.getItem('mtc_sheet_url');
+        if (savedUrl) {
+            AppState.sheetUrl = savedUrl;
+            document.getElementById('app').style.display = 'flex';
+            updateSyncStatus('live');
+            renderCurrentPage();
+        } else {
+            document.getElementById('login-screen').classList.remove('hidden');
+        }
+    }, 1200);
 }
 
-function recalculateSummary() {
-    const planned = AppState.data.planned || [];
-    let total = planned.length;
-    let done = 0;
-    let pending = 0;
-    let inProgress = 0;
-
-    planned.forEach(p => {
-        const s = p['สำเร็จ'] || '';
-        if (s.includes('เสร็จ')) done++;
-        else if (s.includes('กำลัง')) inProgress++;
-        else if (s.includes('รอ')) pending++;
-    });
-
+function recomputeSummary() {
+    const repairs = AppState.data.repairs || [];
+    const counts = { 'เรียบร้อย': 0, 'รอดำเนินการ': 0, 'กำลังดำเนินการ': 0, 'โอนย้าย': 0 };
+    repairs.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
     AppState.data.summary = {
-        'งานทั้งหมด': String(total),
-        'สำเร็จ': String(done),
-        'รอดำเนินการ': String(pending),
-        'กำลังดำเนินการ': String(inProgress)
+        total: repairs.length,
+        completed: counts['เรียบร้อย'],
+        pending: counts['รอดำเนินการ'],
+        inProgress: counts['กำลังดำเนินการ'],
+        transferred: counts['โอนย้าย'],
+        statusCounts: counts,
     };
 }
 
+function persistData() {
+    try {
+        // Save repairs (without large photo data to save space)
+        const toSave = JSON.parse(JSON.stringify(AppState.data));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+        broadcastSync();
+    } catch (e) {
+        console.warn('localStorage save failed:', e);
+    }
+}
+
 // ========================================
-// Settings Panel
+// BroadcastChannel (Cross-tab Sync)
 // ========================================
-function initSettingsPanel() {
-    // Change database button
-    document.getElementById('btn-change-db')?.addEventListener('click', () => {
-        const overlay = document.getElementById('changedb-overlay');
-        const input = document.getElementById('changedb-sheet-id');
-        input.value = GoogleSheetsDB.getSpreadsheetId() || '';
-        overlay.classList.remove('hidden');
-    });
+function setupBroadcastChannel() {
+    try {
+        AppState.syncChannel = new BroadcastChannel('mtc-sync');
+        AppState.syncChannel.onmessage = (e) => {
+            if (e.data.type === 'data-update') {
+                AppState.data = e.data.data;
+                recomputeSummary();
+                renderCurrentPage();
+                showToast('ข้อมูลอัปเดตจากแท็บอื่น', 'info');
+            }
+        };
+    } catch (e) { /* BroadcastChannel not supported */ }
+}
 
-    // Change DB modal close/cancel
-    document.getElementById('changedb-close')?.addEventListener('click', () => {
-        document.getElementById('changedb-overlay').classList.add('hidden');
-    });
-    document.getElementById('changedb-cancel-btn')?.addEventListener('click', () => {
-        document.getElementById('changedb-overlay').classList.add('hidden');
-    });
-    document.getElementById('changedb-overlay')?.addEventListener('click', (e) => {
-        if (e.target === e.currentTarget) {
-            document.getElementById('changedb-overlay').classList.add('hidden');
-        }
-    });
-
-    // Change DB confirm
-    document.getElementById('changedb-ok-btn')?.addEventListener('click', async () => {
-        const newId = document.getElementById('changedb-sheet-id').value.trim();
-        if (!newId) {
-            showToast('กรุณากรอก Spreadsheet ID', 'warning');
-            return;
-        }
-        GoogleSheetsDB.setSpreadsheetId(newId);
-        document.getElementById('changedb-overlay').classList.add('hidden');
-        showToast('กำลังโหลดข้อมูลจากฐานข้อมูลใหม่...', 'info');
-
+function broadcastSync() {
+    if (AppState.syncChannel) {
         try {
-            const result = await GoogleSheetsDB.loadAllData();
-            AppState.data = result.data;
-            recalculateSummary();
-            renderPage(AppState.currentPage);
-            showToast('เปลี่ยนฐานข้อมูลสำเร็จ', 'success');
-        } catch (err) {
-            showToast('ไม่สามารถโหลดข้อมูลจากฐานข้อมูลใหม่ได้', 'error');
-        }
-    });
-
-    // Switch account
-    document.getElementById('btn-switch-account')?.addEventListener('click', () => {
-        if (AppState.useGoogleSheets) {
-            GoogleSheetsDB.signOut();
-            GoogleSheetsDB.signIn();
-        }
-    });
-
-    // Sign out
-    document.getElementById('btn-sign-out')?.addEventListener('click', () => {
-        if (AppState.useGoogleSheets) {
-            GoogleSheetsDB.signOut();
-            GoogleSheetsDB.stopAutoRefresh();
-        }
-        AppState.useGoogleSheets = false;
-        AppState.isOnline = false;
-        showLoginScreen();
-    });
-}
-
-function updateUserDisplay(user) {
-    if (!user) return;
-    const nameEl = document.getElementById('user-name');
-    const emailEl = document.getElementById('user-email');
-    const avatarEl = document.getElementById('user-avatar');
-
-    if (nameEl) nameEl.textContent = user.name;
-    if (emailEl) emailEl.textContent = user.email;
-    if (avatarEl && user.picture) {
-        avatarEl.src = user.picture;
-        avatarEl.style.display = 'block';
-    }
-}
-
-function updateConnectionUI(isConnected) {
-    // Sidebar connection
-    const dot = document.getElementById('connection-dot');
-    const text = document.getElementById('connection-text');
-    if (dot) {
-        dot.className = `connection-dot ${isConnected ? 'online' : 'offline'}`;
-    }
-    if (text) {
-        text.textContent = isConnected ? 'เชื่อมต่อแล้ว' : 'ออฟไลน์';
-    }
-
-    // Topbar sync
-    updateSyncStatus(isConnected ? 'synced' : 'offline');
-}
-
-function updateSyncStatus(status) {
-    const dot = document.getElementById('sync-dot');
-    const text = document.getElementById('sync-text');
-
-    if (!dot || !text) return;
-
-    switch (status) {
-        case 'synced':
-            dot.className = 'sync-dot online';
-            text.textContent = 'ซิงค์แล้ว';
-            break;
-        case 'syncing':
-            dot.className = 'sync-dot syncing';
-            text.textContent = 'กำลังซิงค์...';
-            break;
-        case 'offline':
-        default:
-            dot.className = 'sync-dot';
-            text.textContent = 'ออฟไลน์';
-            break;
+            AppState.syncChannel.postMessage({ type: 'data-update', data: AppState.data });
+        } catch (e) { /* ignore */ }
     }
 }
 
 // ========================================
 // Date Display
 // ========================================
-function initDate() {
-    const dateEl = document.getElementById('current-date');
-    const thaiMonths = [
-        'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
-        'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
-    ];
-    const thaiDays = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+function updateDate() {
     const now = new Date();
     const thaiYear = now.getFullYear() + 543;
-    dateEl.textContent = `วัน${thaiDays[now.getDay()]}ที่ ${now.getDate()} ${thaiMonths[now.getMonth()]} ${thaiYear}`;
+    const days = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
+    const months = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
+                    'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+    const el = document.getElementById('topbar-date');
+    if (el) {
+        el.innerHTML = `<span class="material-icons-round">calendar_today</span>
+            วัน${days[now.getDay()]}ที่ ${now.getDate()} ${months[now.getMonth()]} ${thaiYear}`;
+    }
 }
 
 // ========================================
 // Navigation
 // ========================================
-function initNavigation() {
-    document.querySelectorAll('.nav-item').forEach(item => {
-        item.addEventListener('click', (e) => {
-            e.preventDefault();
-            const page = item.dataset.page;
-            navigateTo(page);
-        });
-    });
-}
-
 function navigateTo(page) {
-    // Update nav items
-    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-    const activeNav = document.querySelector(`.nav-item[data-page="${page}"]`);
-    if (activeNav) activeNav.classList.add('active');
-
-    // Update pages
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    const activePage = document.getElementById(`page-${page}`);
-    if (activePage) activePage.classList.add('active');
-
-    // Update title
-    const titles = {
-        dashboard: 'แดชบอร์ด',
-        planned: 'งานซ่อมตามแผน',
-        requests: 'แจ้งซ่อมเพิ่มเติม',
-        warehouse: 'คลังงานซ่อม',
-        leaks: 'ตำแหน่งน้ำรั่ว',
-        curtains: 'เช็คม่าน',
-        monthly: 'สรุปรายเดือน'
-    };
-    document.getElementById('page-title').textContent = titles[page] || page;
-
     AppState.currentPage = page;
+    AppState.pagination.page = 1;
 
-    // Render page content
-    renderPage(page);
-
-    // Close sidebar on mobile
-    document.getElementById('sidebar').classList.remove('open');
-}
-
-function renderPage(page) {
-    switch (page) {
-        case 'dashboard': renderDashboard(); break;
-        case 'planned': renderPlanned(); break;
-        case 'requests': renderRequests(); break;
-        case 'warehouse': renderWarehouse(); break;
-        case 'leaks': renderLeaks(); break;
-        case 'curtains': renderCurtains(); break;
-        case 'monthly': renderMonthly(); break;
-    }
-}
-
-// ========================================
-// Sidebar
-// ========================================
-function initSidebar() {
-    const toggleBtn = document.getElementById('sidebar-toggle');
-    const sidebar = document.getElementById('sidebar');
-    const mobileBtn = document.getElementById('mobile-menu-btn');
-
-    if (toggleBtn) {
-        toggleBtn.addEventListener('click', () => {
-            sidebar.classList.toggle('collapsed');
-            AppState.sidebarCollapsed = sidebar.classList.contains('collapsed');
-        });
-    }
-
-    if (mobileBtn) {
-        mobileBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            sidebar.classList.toggle('open');
-        });
-    }
-
-    // Close sidebar when clicking outside on mobile
-    document.addEventListener('click', (e) => {
-        if (window.innerWidth <= 768 &&
-            sidebar && sidebar.classList.contains('open') &&
-            !sidebar.contains(e.target) &&
-            (!mobileBtn || !mobileBtn.contains(e.target))) {
-            sidebar.classList.remove('open');
-        }
+    // Update sidebar active state
+    document.querySelectorAll('.nav-item[data-page]').forEach(item => {
+        item.classList.toggle('active', item.dataset.page === page);
     });
+
+    // Update page title
+    document.getElementById('page-title').textContent = PAGE_TITLES[page] || page;
+
+    // Toggle page sections
+    document.querySelectorAll('.page-section').forEach(sec => {
+        sec.classList.toggle('active', sec.id === `page-${page}`);
+    });
+
+    // Close mobile sidebar
+    document.getElementById('sidebar').classList.remove('mobile-open');
+
+    renderCurrentPage();
+}
+
+// Setup nav clicks
+document.addEventListener('click', (e) => {
+    const navItem = e.target.closest('.nav-item[data-page]');
+    if (navItem) {
+        e.preventDefault();
+        navigateTo(navItem.dataset.page);
+    }
+});
+
+function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('mobile-open');
+}
+
+// ========================================
+// Keyboard Shortcuts
+// ========================================
+function handleKeyDown(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        document.getElementById('global-search').focus();
+    }
+    if (e.key === 'Escape') {
+        closeModal();
+        closeConfirm();
+        closeLightbox();
+    }
 }
 
 // ========================================
 // Search
 // ========================================
-function initSearch() {
-    const searchInput = document.getElementById('global-search');
-    let debounceTimer;
-
-    searchInput.addEventListener('input', (e) => {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-            AppState.searchQuery = e.target.value.trim().toLowerCase();
-            renderPage(AppState.currentPage);
-        }, 300);
-    });
-
-    // Keyboard shortcut
-    document.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-            e.preventDefault();
-            searchInput.focus();
-        }
-        if (e.key === 'Escape') {
-            searchInput.blur();
-            searchInput.value = '';
-            AppState.searchQuery = '';
-            renderPage(AppState.currentPage);
-        }
-    });
+function handleSearch(e) {
+    const q = e.target.value.toLowerCase().trim();
+    if (!q) {
+        renderRepairsTable();
+        return;
+    }
+    // Navigate to repairs page if not there
+    if (AppState.currentPage !== 'repairs') navigateTo('repairs');
+    renderRepairsTable(q);
 }
 
 // ========================================
-// Dashboard Rendering
+// Rendering — Route to current page
+// ========================================
+function renderCurrentPage() {
+    switch (AppState.currentPage) {
+        case 'dashboard': renderDashboard(); break;
+        case 'repairs': renderRepairsPage(); break;
+        case 'weekly': renderWeeklyPage(); break;
+        case 'analysis': renderAnalysisPage(); break;
+    }
+}
+
+// ========================================
+// Dashboard
 // ========================================
 function renderDashboard() {
-    renderStats();
-    renderRecentActivity();
-    renderMonthlyChart();
-    renderStatusChart();
-    renderTypeChart();
-}
-
-function renderStats() {
     const s = AppState.data.summary;
-    const grid = document.getElementById('stats-grid');
-    grid.innerHTML = `
-        <div class="stat-card red">
+    
+    // Stat cards
+    document.getElementById('stats-grid').innerHTML = `
+        <div class="stat-card total">
             <div class="stat-icon"><span class="material-icons-round">assignment</span></div>
             <div class="stat-info">
                 <div class="stat-label">งานทั้งหมด</div>
-                <div class="stat-value">${animateCounter(s['งานทั้งหมด'] || '0')}</div>
+                <div class="stat-value">${s.total || 0}</div>
             </div>
         </div>
-        <div class="stat-card green">
+        <div class="stat-card completed">
             <div class="stat-icon"><span class="material-icons-round">check_circle</span></div>
             <div class="stat-info">
                 <div class="stat-label">สำเร็จ</div>
-                <div class="stat-value">${animateCounter(s['สำเร็จ'] || '0')}</div>
+                <div class="stat-value">${s.completed || 0}</div>
             </div>
         </div>
-        <div class="stat-card yellow">
+        <div class="stat-card pending">
             <div class="stat-icon"><span class="material-icons-round">pending</span></div>
             <div class="stat-info">
                 <div class="stat-label">รอดำเนินการ</div>
-                <div class="stat-value">${animateCounter(s['รอดำเนินการ'] || '0')}</div>
+                <div class="stat-value">${s.pending || 0}</div>
             </div>
         </div>
-        <div class="stat-card blue">
-            <div class="stat-icon"><span class="material-icons-round">engineering</span></div>
+        <div class="stat-card in-progress">
+            <div class="stat-icon"><span class="material-icons-round">autorenew</span></div>
             <div class="stat-info">
                 <div class="stat-label">กำลังดำเนินการ</div>
-                <div class="stat-value">${animateCounter(s['กำลังดำเนินการ'] || '0')}</div>
+                <div class="stat-value">${s.inProgress || 0}</div>
             </div>
         </div>
     `;
 
-    // Animate counters
-    grid.querySelectorAll('.stat-value').forEach(el => {
-        const target = parseInt(el.textContent) || 0;
-        animateNumber(el, target);
-    });
+    // Charts
+    renderMonthlyTrendChart();
+    renderStatusDonutChart();
+    renderTypeBarChart();
+    renderRecentList();
 }
 
-function animateCounter(val) {
-    return parseInt(val) || 0;
-}
+function renderMonthlyTrendChart() {
+    const analysis = AppState.data.analysis || [];
+    if (!analysis.length) return;
 
-function animateNumber(el, target) {
-    let current = 0;
-    const step = Math.max(1, Math.floor(target / 30));
-    const timer = setInterval(() => {
-        current += step;
-        if (current >= target) {
-            current = target;
-            clearInterval(timer);
-        }
-        el.textContent = current;
-    }, 30);
-}
+    const labels = analysis.map(a => a.month);
+    const totals = analysis.map(a => a.totals?.total || 0);
+    const completed = analysis.map(a => a.totals?.completed || 0);
+    const pending = analysis.map(a => (a.totals?.pending || 0) + (a.totals?.inProgress || 0));
 
-function renderRecentActivity() {
-    const container = document.getElementById('recent-activity');
-    const requests = AppState.data.requests.slice(0, 10);
-
-    if (!requests.length) {
-        container.innerHTML = '<div class="empty-state"><span class="material-icons-round">inbox</span><p>ไม่มีข้อมูล</p></div>';
-        return;
-    }
-
-    container.innerHTML = requests.map(r => {
-        const status = getStatusClass(r['สถานะ']);
-        return `
-            <div class="activity-item">
-                <span class="activity-dot ${status}"></span>
-                <div class="activity-text">
-                    <div class="activity-title">${escapeHtml(r['เรื่อง'] || r['หัวข้อ'] || '-')}</div>
-                    <div class="activity-meta">${escapeHtml(r['ชื่อผู้แจ้งซ่อม'] || '')} • ชั้น ${escapeHtml(r['ชั้น'] || '-')} • ${formatStatus(r['สถานะ'])}</div>
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-
-function renderMonthlyChart() {
-    const ctx = document.getElementById('monthly-chart');
+    const ctx = document.getElementById('monthly-trend-chart');
     if (!ctx) return;
 
-    if (AppState.charts.monthly) AppState.charts.monthly.destroy();
+    if (AppState.charts.monthlyTrend) AppState.charts.monthlyTrend.destroy();
 
-    const monthly = AppState.data.monthly.filter(m => m['งานทั้งหมด'] && m['งานทั้งหมด'] !== '');
-    const labels = monthly.map(m => m['เดือน']);
-    const total = monthly.map(m => parseInt(m['งานทั้งหมด']) || 0);
-    const done = monthly.map(m => parseInt(m['เสร็จ']) || 0);
+    const chartType = document.getElementById('monthly-chart-type')?.value || 'line';
 
-    AppState.charts.monthly = new Chart(ctx, {
-        type: 'line',
+    AppState.charts.monthlyTrend = new Chart(ctx, {
+        type: chartType,
         data: {
             labels,
             datasets: [
                 {
                     label: 'งานทั้งหมด',
-                    data: total,
-                    borderColor: '#dc2626',
-                    backgroundColor: 'rgba(220, 38, 38, 0.1)',
-                    borderWidth: 2.5,
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 5,
-                    pointBackgroundColor: '#dc2626',
-                    pointBorderColor: '#0a0a0a',
-                    pointBorderWidth: 2,
-                    pointHoverRadius: 8,
+                    data: totals,
+                    borderColor: CHART_COLORS.blue,
+                    backgroundColor: chartType === 'bar' ? CHART_COLORS.blueBg : 'transparent',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: chartType === 'line',
+                    pointRadius: 4,
+                    pointBackgroundColor: CHART_COLORS.blue,
                 },
                 {
-                    label: 'เสร็จสิ้น',
-                    data: done,
-                    borderColor: '#22c55e',
-                    backgroundColor: 'rgba(34, 197, 94, 0.08)',
-                    borderWidth: 2.5,
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 5,
-                    pointBackgroundColor: '#22c55e',
-                    pointBorderColor: '#0a0a0a',
-                    pointBorderWidth: 2,
-                    pointHoverRadius: 8,
-                }
+                    label: 'สำเร็จ',
+                    data: completed,
+                    borderColor: CHART_COLORS.green,
+                    backgroundColor: chartType === 'bar' ? CHART_COLORS.greenBg : 'transparent',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: false,
+                    pointRadius: 4,
+                    pointBackgroundColor: CHART_COLORS.green,
+                },
+                {
+                    label: 'รอดำเนินการ',
+                    data: pending,
+                    borderColor: CHART_COLORS.amber,
+                    backgroundColor: chartType === 'bar' ? CHART_COLORS.amberBg : 'transparent',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: false,
+                    pointRadius: 4,
+                    pointBackgroundColor: CHART_COLORS.amber,
+                },
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            interaction: {
-                intersect: false,
-                mode: 'index'
-            },
             plugins: {
-                legend: {
-                    labels: {
-                        color: '#a3a3a3',
-                        font: { family: "'Noto Sans Thai', sans-serif", size: 12 },
-                        usePointStyle: true,
-                        pointStyle: 'circle',
-                        padding: 20
-                    }
-                },
-                tooltip: {
-                    backgroundColor: '#262626',
-                    titleColor: '#fafafa',
-                    bodyColor: '#a3a3a3',
-                    borderColor: '#333',
-                    borderWidth: 1,
-                    padding: 12,
-                    titleFont: { family: "'Noto Sans Thai', sans-serif" },
-                    bodyFont: { family: "'Noto Sans Thai', sans-serif" },
-                    cornerRadius: 8,
-                    displayColors: true,
-                }
+                legend: { position: 'top', labels: { usePointStyle: true, padding: 16, font: { family: "'Noto Sans Thai', sans-serif", size: 12 } } },
             },
             scales: {
-                x: {
-                    grid: { color: 'rgba(255,255,255,0.04)' },
-                    ticks: {
-                        color: '#737373',
-                        font: { family: "'Noto Sans Thai', sans-serif", size: 11 }
-                    }
-                },
-                y: {
-                    grid: { color: 'rgba(255,255,255,0.04)' },
-                    ticks: {
-                        color: '#737373',
-                        font: { family: "'Noto Sans Thai', sans-serif", size: 11 }
-                    },
-                    beginAtZero: true
-                }
+                y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { family: "'Noto Sans Thai'" } } },
+                x: { grid: { display: false }, ticks: { font: { family: "'Noto Sans Thai'" } } },
             }
         }
     });
 }
 
-function renderStatusChart() {
-    const ctx = document.getElementById('status-chart');
+function updateMonthlyChart() {
+    renderMonthlyTrendChart();
+}
+
+function renderStatusDonutChart() {
+    const s = AppState.data.summary;
+    if (!s.total) return;
+
+    const ctx = document.getElementById('status-donut-chart');
     if (!ctx) return;
+    if (AppState.charts.statusDonut) AppState.charts.statusDonut.destroy();
 
-    if (AppState.charts.status) AppState.charts.status.destroy();
-
-    const planned = AppState.data.planned;
-    const counts = {
-        'เสร็จสิ้น': 0,
-        'กำลังดำเนินการ': 0,
-        'รอดำเนินการ': 0
-    };
-    planned.forEach(p => {
-        const s = p['สำเร็จ'] || '';
-        if (s.includes('เสร็จ')) counts['เสร็จสิ้น']++;
-        else if (s.includes('กำลัง')) counts['กำลังดำเนินการ']++;
-        else if (s.includes('รอ')) counts['รอดำเนินการ']++;
-    });
-
-    AppState.charts.status = new Chart(ctx, {
+    AppState.charts.statusDonut = new Chart(ctx, {
         type: 'doughnut',
         data: {
-            labels: Object.keys(counts),
+            labels: ['สำเร็จ', 'รอดำเนินการ', 'กำลังดำเนินการ', 'โอนย้าย'],
             datasets: [{
-                data: Object.values(counts),
-                backgroundColor: ['#22c55e', '#3b82f6', '#f59e0b'],
-                borderColor: '#1a1a1a',
-                borderWidth: 3,
-                hoverOffset: 8
+                data: [s.completed, s.pending, s.inProgress, s.transferred],
+                backgroundColor: [CHART_COLORS.green, CHART_COLORS.amber, CHART_COLORS.blue, CHART_COLORS.purple],
+                borderWidth: 0,
+                hoverOffset: 8,
             }]
         },
         options: {
@@ -807,1366 +414,752 @@ function renderStatusChart() {
             maintainAspectRatio: false,
             cutout: '65%',
             plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        color: '#a3a3a3',
-                        font: { family: "'Noto Sans Thai', sans-serif", size: 12 },
-                        usePointStyle: true,
-                        pointStyle: 'circle',
-                        padding: 16
-                    }
-                },
-                tooltip: {
-                    backgroundColor: '#262626',
-                    titleColor: '#fafafa',
-                    bodyColor: '#a3a3a3',
-                    borderColor: '#333',
-                    borderWidth: 1,
-                    padding: 12,
-                    cornerRadius: 8,
-                    titleFont: { family: "'Noto Sans Thai', sans-serif" },
-                    bodyFont: { family: "'Noto Sans Thai', sans-serif" },
-                }
+                legend: { position: 'bottom', labels: { usePointStyle: true, padding: 12, font: { family: "'Noto Sans Thai'", size: 11 } } }
             }
         }
     });
 }
 
-function renderTypeChart() {
-    const ctx = document.getElementById('type-chart');
-    if (!ctx) return;
-
-    if (AppState.charts.type) AppState.charts.type.destroy();
-
+function renderTypeBarChart() {
+    // Aggregate repair types from all repairs
     const typeCounts = {};
-    AppState.data.planned.forEach(p => {
-        const t = p['ประเภท'] || 'อื่นๆ';
-        typeCounts[t] = (typeCounts[t] || 0) + 1;
+    (AppState.data.repairs || []).forEach(r => {
+        if (r.type) typeCounts[r.type] = (typeCounts[r.type] || 0) + 1;
     });
 
-    const sorted = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
-    const labels = sorted.map(s => s[0]);
-    const values = sorted.map(s => s[1]);
+    const sorted = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+    if (!sorted.length) return;
 
-    const colors = ['#dc2626', '#ef4444', '#f87171', '#fca5a5', '#f59e0b', '#3b82f6', '#22c55e', '#a855f7'];
+    const ctx = document.getElementById('type-bar-chart');
+    if (!ctx) return;
+    if (AppState.charts.typeBar) AppState.charts.typeBar.destroy();
 
-    AppState.charts.type = new Chart(ctx, {
+    const colors = [CHART_COLORS.blue, CHART_COLORS.green, CHART_COLORS.amber, CHART_COLORS.red,
+                    CHART_COLORS.purple, '#06B6D4', '#EC4899', '#8B5CF6', '#14B8A6'];
+
+    AppState.charts.typeBar = new Chart(ctx, {
         type: 'bar',
         data: {
-            labels,
+            labels: sorted.map(s => s[0]),
             datasets: [{
-                label: 'จำนวนงาน',
-                data: values,
-                backgroundColor: colors.slice(0, values.length).map(c => c + '80'),
-                borderColor: colors.slice(0, values.length),
+                label: 'จำนวน',
+                data: sorted.map(s => s[1]),
+                backgroundColor: sorted.map((_, i) => colors[i % colors.length] + '30'),
+                borderColor: sorted.map((_, i) => colors[i % colors.length]),
                 borderWidth: 1.5,
                 borderRadius: 6,
-                barThickness: 28,
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             indexAxis: 'y',
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    backgroundColor: '#262626',
-                    titleColor: '#fafafa',
-                    bodyColor: '#a3a3a3',
-                    borderColor: '#333',
-                    borderWidth: 1,
-                    padding: 12,
-                    cornerRadius: 8,
-                    titleFont: { family: "'Noto Sans Thai', sans-serif" },
-                    bodyFont: { family: "'Noto Sans Thai', sans-serif" },
-                }
-            },
+            plugins: { legend: { display: false } },
             scales: {
-                x: {
-                    grid: { color: 'rgba(255,255,255,0.04)' },
-                    ticks: {
-                        color: '#737373',
-                        font: { family: "'Noto Sans Thai', sans-serif", size: 11 }
-                    },
-                    beginAtZero: true
-                },
-                y: {
-                    grid: { display: false },
-                    ticks: {
-                        color: '#a3a3a3',
-                        font: { family: "'Noto Sans Thai', sans-serif", size: 11 }
-                    }
-                }
+                x: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { family: "'Noto Sans Thai'" } } },
+                y: { grid: { display: false }, ticks: { font: { family: "'Noto Sans Thai'", size: 11 } } },
             }
         }
     });
 }
 
-// ========================================
-// Planned Repairs Page
-// ========================================
-function renderPlanned() {
-    const filterStatus = document.getElementById('planned-filter-status')?.value || '';
-    const filterType = document.getElementById('planned-filter-type')?.value || '';
-    const filterMonth = document.getElementById('planned-filter-month')?.value || '';
+function renderRecentList() {
+    const repairs = (AppState.data.repairs || []).slice(-10).reverse();
+    const el = document.getElementById('recent-list');
+    if (!el) return;
 
-    // Populate dynamic filter options
-    populateFilters();
-
-    let data = [...AppState.data.planned];
-
-    // Apply filters
-    if (filterStatus) data = data.filter(d => (d['สำเร็จ'] || '').includes(filterStatus));
-    if (filterType) data = data.filter(d => d['ประเภท'] === filterType);
-    if (filterMonth) data = data.filter(d => d['เดือน'] === filterMonth);
-    if (AppState.searchQuery) {
-        data = data.filter(d =>
-            Object.values(d).some(v => v.toLowerCase().includes(AppState.searchQuery))
-        );
-    }
-
-    // Pagination
-    const pag = AppState.pagination.planned;
-    const totalPages = Math.ceil(data.length / pag.perPage);
-    const startIdx = (pag.page - 1) * pag.perPage;
-    const pageData = data.slice(startIdx, startIdx + pag.perPage);
-
-    const tbody = document.getElementById('planned-tbody');
-    if (!pageData.length) {
-        tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><span class="material-icons-round">search_off</span><p>ไม่พบข้อมูล</p></div></td></tr>`;
-    } else {
-        tbody.innerHTML = pageData.map((item, idx) => {
-            const globalIdx = AppState.data.planned.indexOf(item);
-            return `
-            <tr draggable="true" data-source="planned" data-index="${globalIdx}">
-                <td><strong>${escapeHtml(item['รหัสงานซ่อม'])}</strong></td>
-                <td title="${escapeHtml(item['หัวข้อ'])}">${escapeHtml(item['หัวข้อ'])}</td>
-                <td>${escapeHtml(item['ชั้น'])}</td>
-                <td>${escapeHtml(item['ประเภท'])}</td>
-                <td>${escapeHtml(item['ตำแหน่ง'])}</td>
-                <td>${renderPriority(item['ความสำคัญ'])}</td>
-                <td>${renderStatusBadge(item['สำเร็จ'])}</td>
-                <td>${escapeHtml(item['เดือน'])}</td>
-                <td class="actions-col">
-                    <div class="action-btns">
-                        <button class="btn-icon edit" title="แก้ไข" onclick="editItem('planned', ${globalIdx})">
-                            <span class="material-icons-round">edit</span>
-                        </button>
-                        <button class="btn-icon move" title="โอนย้าย" onclick="moveItem('planned', ${globalIdx})">
-                            <span class="material-icons-round">drive_file_move</span>
-                        </button>
-                        <button class="btn-icon delete" title="ลบ" onclick="deleteItem('planned', ${globalIdx})">
-                            <span class="material-icons-round">delete</span>
-                        </button>
-                    </div>
-                </td>
-            </tr>
-        `}).join('');
-    }
-
-    renderPagination('planned', pag.page, totalPages, data.length);
-    initDragDrop();
-
-    // Attach filter listeners (once)
-    attachFilterListeners('planned');
-}
-
-function populateFilters() {
-    // Type filter
-    const typeFilter = document.getElementById('planned-filter-type');
-    if (typeFilter && typeFilter.options.length <= 1) {
-        const types = [...new Set(AppState.data.planned.map(p => p['ประเภท']).filter(Boolean))];
-        types.sort();
-        types.forEach(t => {
-            const opt = document.createElement('option');
-            opt.value = t;
-            opt.textContent = t;
-            typeFilter.appendChild(opt);
-        });
-    }
-
-    // Month filter
-    const monthFilter = document.getElementById('planned-filter-month');
-    if (monthFilter && monthFilter.options.length <= 1) {
-        const months = [...new Set(AppState.data.planned.map(p => p['เดือน']).filter(Boolean))];
-        months.forEach(m => {
-            const opt = document.createElement('option');
-            opt.value = m;
-            opt.textContent = m;
-            monthFilter.appendChild(opt);
-        });
-    }
-}
-
-function attachFilterListeners(source) {
-    const container = document.getElementById(`page-${source}`);
-    if (!container) return;
-    const selects = container.querySelectorAll('.filter-select');
-    selects.forEach(sel => {
-        if (!sel.dataset.listening) {
-            sel.dataset.listening = 'true';
-            sel.addEventListener('change', () => {
-                AppState.pagination[source] && (AppState.pagination[source].page = 1);
-                renderPage(AppState.currentPage);
-            });
-        }
-    });
-}
-
-// ========================================
-// Requests Page
-// ========================================
-function renderRequests() {
-    const filterStatus = document.getElementById('requests-filter-status')?.value || '';
-
-    let data = [...AppState.data.requests];
-    if (filterStatus) data = data.filter(d => (d['สถานะ'] || '').includes(filterStatus));
-    if (AppState.searchQuery) {
-        data = data.filter(d =>
-            Object.values(d).some(v => v.toLowerCase().includes(AppState.searchQuery))
-        );
-    }
-
-    const pag = AppState.pagination.requests;
-    const totalPages = Math.ceil(data.length / pag.perPage);
-    const startIdx = (pag.page - 1) * pag.perPage;
-    const pageData = data.slice(startIdx, startIdx + pag.perPage);
-
-    const tbody = document.getElementById('requests-tbody');
-    if (!pageData.length) {
-        tbody.innerHTML = `<tr><td colspan="10"><div class="empty-state"><span class="material-icons-round">search_off</span><p>ไม่พบข้อมูล</p></div></td></tr>`;
-    } else {
-        tbody.innerHTML = pageData.map((item, idx) => {
-            const globalIdx = AppState.data.requests.indexOf(item);
-            return `
-            <tr draggable="true" data-source="requests" data-index="${globalIdx}">
-                <td>${escapeHtml(item['ลำดับ'])}</td>
-                <td>${escapeHtml(item['ชื่อผู้แจ้งซ่อม'])}</td>
-                <td>${escapeHtml(item['แจ้งผ่าน'])}</td>
-                <td title="${escapeHtml(item['เรื่อง'])}">${escapeHtml(item['เรื่อง'])}</td>
-                <td>${escapeHtml(item['ชั้น'])}</td>
-                <td>${escapeHtml(item['ประเภท'])}</td>
-                <td>${escapeHtml(item['ตำแหน่ง'])}</td>
-                <td>${renderStatusBadge(item['สถานะ'])}</td>
-                <td>${formatDate(item['วันที่แจ้งซ่อม'])}</td>
-                <td class="actions-col">
-                    <div class="action-btns">
-                        <button class="btn-icon edit" title="แก้ไข" onclick="editItem('requests', ${globalIdx})">
-                            <span class="material-icons-round">edit</span>
-                        </button>
-                        <button class="btn-icon move" title="โอนย้าย" onclick="moveItem('requests', ${globalIdx})">
-                            <span class="material-icons-round">drive_file_move</span>
-                        </button>
-                        <button class="btn-icon delete" title="ลบ" onclick="deleteItem('requests', ${globalIdx})">
-                            <span class="material-icons-round">delete</span>
-                        </button>
-                    </div>
-                </td>
-            </tr>
-        `}).join('');
-    }
-
-    renderPagination('requests', pag.page, totalPages, data.length);
-    initDragDrop();
-    attachFilterListeners('requests');
-}
-
-// ========================================
-// Warehouse Page
-// ========================================
-function renderWarehouse() {
-    const filterStatus = document.getElementById('warehouse-filter-status')?.value || '';
-    const filterUrgency = document.getElementById('warehouse-filter-urgency')?.value || '';
-
-    let data = [...AppState.data.warehouse];
-    if (filterStatus) data = data.filter(d => (d['สถานะงาน'] || '').includes(filterStatus));
-    if (filterUrgency) data = data.filter(d => (d['ความเร่งด่วน'] || '').includes(filterUrgency));
-    if (AppState.searchQuery) {
-        data = data.filter(d =>
-            Object.values(d).some(v => v.toLowerCase().includes(AppState.searchQuery))
-        );
-    }
-
-    const pag = AppState.pagination.warehouse;
-    const totalPages = Math.ceil(data.length / pag.perPage) || 1;
-    const startIdx = (pag.page - 1) * pag.perPage;
-    const pageData = data.slice(startIdx, startIdx + pag.perPage);
-
-    const tbody = document.getElementById('warehouse-tbody');
-    if (!pageData.length) {
-        tbody.innerHTML = `<tr><td colspan="11"><div class="empty-state"><span class="material-icons-round">search_off</span><p>ไม่พบข้อมูล</p></div></td></tr>`;
-    } else {
-        tbody.innerHTML = pageData.map((item) => {
-            const globalIdx = AppState.data.warehouse.indexOf(item);
-            return `
-            <tr draggable="true" data-source="warehouse" data-index="${globalIdx}">
-                <td>${escapeHtml(item['ลำดับ'])}</td>
-                <td>${formatDate(item['วันที่แจ้ง'])}</td>
-                <td>${escapeHtml(item['งานของเดือน'])}</td>
-                <td>${escapeHtml(item['ผู้แจ้ง'])}</td>
-                <td>${escapeHtml(item['ฝ่าย'])}</td>
-                <td>${escapeHtml(item['ชั้น'])}</td>
-                <td title="${escapeHtml(item['รายละเอียด'])}">${escapeHtml(item['รายละเอียด'])}</td>
-                <td>${escapeHtml(item['ประเภท'])}</td>
-                <td>${renderStatusBadge(item['สถานะงาน'])}</td>
-                <td>${renderUrgencyBadge(item['ความเร่งด่วน'])}</td>
-                <td class="actions-col">
-                    <div class="action-btns">
-                        <button class="btn-icon edit" title="แก้ไข" onclick="editItem('warehouse', ${globalIdx})">
-                            <span class="material-icons-round">edit</span>
-                        </button>
-                        <button class="btn-icon move" title="โอนย้าย" onclick="moveItem('warehouse', ${globalIdx})">
-                            <span class="material-icons-round">drive_file_move</span>
-                        </button>
-                        <button class="btn-icon delete" title="ลบ" onclick="deleteItem('warehouse', ${globalIdx})">
-                            <span class="material-icons-round">delete</span>
-                        </button>
-                    </div>
-                </td>
-            </tr>
-        `}).join('');
-    }
-
-    renderPagination('warehouse', pag.page, totalPages, data.length);
-    initDragDrop();
-    attachFilterListeners('warehouse');
-}
-
-// ========================================
-// Leaks Page
-// ========================================
-function renderLeaks() {
-    const grid = document.getElementById('leaks-grid');
-    let data = [...AppState.data.leaks];
-
-    if (AppState.searchQuery) {
-        data = data.filter(d =>
-            Object.values(d).some(v => v.toLowerCase().includes(AppState.searchQuery))
-        );
-    }
-
-    if (!data.length) {
-        grid.innerHTML = '<div class="empty-state"><span class="material-icons-round">water_drop</span><p>ไม่มีข้อมูลตำแหน่งน้ำรั่ว</p></div>';
+    if (!repairs.length) {
+        el.innerHTML = '<li class="recent-item" style="color:var(--text-tertiary)">ไม่มีข้อมูล</li>';
         return;
     }
 
-    grid.innerHTML = data.map((item, idx) => `
-        <div class="info-card" data-index="${idx}">
-            <div class="info-card-header">
-                <div class="info-card-floor">
-                    <span class="material-icons-round">layers</span>
-                    ชั้น ${escapeHtml(item['ชั้น'])}
-                </div>
-                <div class="info-card-actions">
-                    <button class="btn-icon edit" title="แก้ไข" onclick="editItem('leaks', ${idx})">
-                        <span class="material-icons-round">edit</span>
-                    </button>
-                    <button class="btn-icon delete" title="ลบ" onclick="deleteItem('leaks', ${idx})">
-                        <span class="material-icons-round">delete</span>
-                    </button>
-                </div>
-            </div>
-            <div class="info-card-detail">
-                <div class="info-card-label">ตำแหน่ง</div>
-                <div class="info-card-value">${escapeHtml(item['ตำแหน่ง'])}</div>
-            </div>
-            <div class="info-card-detail" style="margin-top:10px">
-                <div class="info-card-label">รายละเอียด</div>
-                <div class="info-card-value">${escapeHtml(item['รายละเอียด'])}</div>
-            </div>
+    el.innerHTML = repairs.map(r => {
+        const statusInfo = STATUS_MAP[r.status] || { class: 'pending', icon: 'help' };
+        return `<li class="recent-item">
+            <span class="recent-dot ${statusInfo.class === 'completed' ? 'success' : statusInfo.class === 'pending' ? 'warning' : 'info'}"></span>
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.subject)}</span>
+            <span class="status-badge ${statusInfo.class}" style="flex-shrink:0">${r.status}</span>
+        </li>`;
+    }).join('');
+}
+
+// ========================================
+// Repairs Page
+// ========================================
+function renderRepairsPage() {
+    renderRepairsTable();
+}
+
+function getFilteredRepairs(searchQuery) {
+    let repairs = [...(AppState.data.repairs || [])];
+    const f = AppState.filters;
+
+    if (f.status) repairs = repairs.filter(r => r.status === f.status);
+    if (f.type) repairs = repairs.filter(r => r.type === f.type);
+    if (f.department) repairs = repairs.filter(r => r.department === f.department);
+
+    if (searchQuery) {
+        repairs = repairs.filter(r =>
+            (r.subject || '').toLowerCase().includes(searchQuery) ||
+            (r.reporter || '').toLowerCase().includes(searchQuery) ||
+            (r.location || '').toLowerCase().includes(searchQuery) ||
+            (r.type || '').toLowerCase().includes(searchQuery) ||
+            (r.order || '').includes(searchQuery)
+        );
+    }
+
+    // Sort
+    const { field, direction } = AppState.sort;
+    repairs.sort((a, b) => {
+        let va = a[field] || '', vb = b[field] || '';
+        if (field === 'order') { va = parseInt(va) || 0; vb = parseInt(vb) || 0; }
+        if (va < vb) return direction === 'asc' ? -1 : 1;
+        if (va > vb) return direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    return repairs;
+}
+
+function renderRepairsTable(searchQuery) {
+    const filtered = getFilteredRepairs(searchQuery);
+    const { page, perPage } = AppState.pagination;
+    const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
+    const currentPage = Math.min(page, totalPages);
+    const start = (currentPage - 1) * perPage;
+    const pageItems = filtered.slice(start, start + perPage);
+
+    const tbody = document.getElementById('repairs-tbody');
+    if (!tbody) return;
+
+    if (!pageItems.length) {
+        tbody.innerHTML = `<tr><td colspan="9" class="empty-state">
+            <span class="material-icons-round">search_off</span>
+            <h3>ไม่พบข้อมูล</h3><p>ลองเปลี่ยนตัวกรองหรือคำค้นหา</p>
+        </td></tr>`;
+    } else {
+        tbody.innerHTML = pageItems.map((r, i) => {
+            const realIndex = AppState.data.repairs.indexOf(r);
+            const statusInfo = STATUS_MAP[r.status] || { class: 'pending', icon: 'help' };
+            const photoCount = (r.photos || []).length;
+            const photoHtml = photoCount > 0
+                ? `<div class="photo-thumbs">
+                    ${r.photos.slice(0, 2).map((p, pi) => `<img class="photo-thumb" src="${p}" alt="photo" onclick="openLightbox(${realIndex}, ${pi})">`).join('')}
+                    ${photoCount > 2 ? `<span class="photo-more" onclick="openLightbox(${realIndex}, 2)">+${photoCount - 2}</span>` : ''}
+                   </div>`
+                : '<span style="color:var(--text-tertiary);font-size:11px">—</span>';
+
+            return `<tr>
+                <td><strong>${escHtml(r.order)}</strong></td>
+                <td class="td-subject" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(r.subject)}">${escHtml(r.subject)}</td>
+                <td>${escHtml(r.department)}</td>
+                <td>${escHtml(r.floor)}</td>
+                <td>${escHtml(r.type)}</td>
+                <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.location)}</td>
+                <td><span class="status-badge ${statusInfo.class}"><span class="material-icons-round" style="font-size:13px">${statusInfo.icon}</span>${r.status}</span></td>
+                <td>${photoHtml}</td>
+                <td>
+                    <div class="action-btns">
+                        <button class="action-btn" onclick="openEditModal(${realIndex})" title="แก้ไข"><span class="material-icons-round">edit</span></button>
+                        <button class="action-btn delete" onclick="confirmDelete(${realIndex})" title="ลบ"><span class="material-icons-round">delete</span></button>
+                    </div>
+                </td>
+            </tr>`;
+        }).join('');
+    }
+
+    // Pagination
+    renderPagination(filtered.length, currentPage, totalPages);
+}
+
+function renderPagination(total, current, totalPages) {
+    const el = document.getElementById('repairs-pagination');
+    if (!el) return;
+
+    el.innerHTML = `
+        <div class="pagination-info">แสดง ${((current-1)*AppState.pagination.perPage)+1}–${Math.min(current*AppState.pagination.perPage, total)} จาก ${total} รายการ</div>
+        <div class="pagination-btns">
+            <button class="page-btn" ${current <= 1 ? 'disabled' : ''} onclick="goToPage(${current-1})"><span class="material-icons-round" style="font-size:16px">chevron_left</span></button>
+            ${Array.from({length: Math.min(totalPages, 7)}, (_, i) => {
+                let p = i + 1;
+                if (totalPages > 7) {
+                    if (current <= 4) p = i + 1;
+                    else if (current >= totalPages - 3) p = totalPages - 6 + i;
+                    else p = current - 3 + i;
+                }
+                return `<button class="page-btn ${p === current ? 'active' : ''}" onclick="goToPage(${p})">${p}</button>`;
+            }).join('')}
+            <button class="page-btn" ${current >= totalPages ? 'disabled' : ''} onclick="goToPage(${current+1})"><span class="material-icons-round" style="font-size:16px">chevron_right</span></button>
+        </div>
+    `;
+}
+
+function goToPage(p) {
+    AppState.pagination.page = p;
+    renderRepairsTable();
+}
+
+function populateFilterDropdowns() {
+    const types = new Set(), depts = new Set();
+    (AppState.data.repairs || []).forEach(r => {
+        if (r.type) types.add(r.type);
+        if (r.department) depts.add(r.department);
+    });
+
+    const typeSelect = document.getElementById('filter-type');
+    if (typeSelect) {
+        typeSelect.innerHTML = '<option value="">ประเภททั้งหมด</option>' +
+            [...types].sort().map(t => `<option value="${t}">${t}</option>`).join('');
+    }
+
+    const deptSelect = document.getElementById('filter-dept');
+    if (deptSelect) {
+        deptSelect.innerHTML = '<option value="">ฝ่ายทั้งหมด</option>' +
+            [...depts].sort().map(d => `<option value="${d}">${d}</option>`).join('');
+    }
+}
+
+function filterRepairs() {
+    AppState.filters.status = document.getElementById('filter-status')?.value || '';
+    AppState.filters.type = document.getElementById('filter-type')?.value || '';
+    AppState.filters.department = document.getElementById('filter-dept')?.value || '';
+    AppState.pagination.page = 1;
+    renderRepairsTable();
+}
+
+function sortRepairs(field) {
+    if (AppState.sort.field === field) {
+        AppState.sort.direction = AppState.sort.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+        AppState.sort.field = field;
+        AppState.sort.direction = 'asc';
+    }
+    renderRepairsTable();
+}
+
+// ========================================
+// CRUD — Add / Edit / Delete
+// ========================================
+function openAddModal() {
+    document.getElementById('edit-index').value = '-1';
+    document.getElementById('modal-title').textContent = 'เพิ่มงานซ่อม';
+    clearModalForm();
+    AppState.editPhotos = [];
+    renderPhotoGallery();
+    document.getElementById('repair-modal').classList.add('active');
+}
+
+function openEditModal(index) {
+    const r = AppState.data.repairs[index];
+    if (!r) return;
+
+    document.getElementById('edit-index').value = index;
+    document.getElementById('modal-title').textContent = 'แก้ไขงานซ่อม';
+    document.getElementById('field-reporter').value = r.reporter || '';
+    document.getElementById('field-department').value = r.department || '';
+    document.getElementById('field-channel').value = r.channel || 'Line';
+    document.getElementById('field-floor').value = r.floor || '';
+    document.getElementById('field-subject').value = r.subject || '';
+    document.getElementById('field-type').value = r.type || 'ไฟฟ้า';
+    document.getElementById('field-location').value = r.location || '';
+    document.getElementById('field-status').value = r.status || 'รอดำเนินการ';
+    document.getElementById('field-date-reported').value = r.dateReported || '';
+
+    AppState.editPhotos = [...(r.photos || [])];
+    renderPhotoGallery();
+    document.getElementById('repair-modal').classList.add('active');
+}
+
+function closeModal() {
+    document.getElementById('repair-modal').classList.remove('active');
+    AppState.editPhotos = [];
+}
+
+function clearModalForm() {
+    ['field-reporter','field-floor','field-subject','field-location','field-date-reported'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    document.getElementById('field-department').value = '';
+    document.getElementById('field-channel').value = 'Line';
+    document.getElementById('field-type').value = 'ไฟฟ้า';
+    document.getElementById('field-status').value = 'รอดำเนินการ';
+}
+
+function saveRepair() {
+    const reporter = document.getElementById('field-reporter').value.trim();
+    const subject = document.getElementById('field-subject').value.trim();
+    if (!subject) {
+        showToast('กรุณากรอกเรื่อง', 'warning');
+        return;
+    }
+
+    const item = {
+        order: '',
+        reporter,
+        department: document.getElementById('field-department').value,
+        channel: document.getElementById('field-channel').value,
+        subject,
+        floor: document.getElementById('field-floor').value.trim(),
+        type: document.getElementById('field-type').value,
+        dateReported: document.getElementById('field-date-reported').value,
+        location: document.getElementById('field-location').value.trim(),
+        status: document.getElementById('field-status').value,
+        dateFixed: '',
+        photos: [...AppState.editPhotos],
+    };
+
+    const editIdx = parseInt(document.getElementById('edit-index').value);
+
+    if (editIdx >= 0 && editIdx < AppState.data.repairs.length) {
+        item.order = AppState.data.repairs[editIdx].order;
+        item.dateFixed = AppState.data.repairs[editIdx].dateFixed;
+        if (item.status === 'เรียบร้อย' && !item.dateFixed) {
+            const now = new Date();
+            item.dateFixed = `${now.getFullYear() + 543}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+        }
+        AppState.data.repairs[editIdx] = item;
+        showToast('แก้ไขงานซ่อมเรียบร้อย', 'success');
+    } else {
+        item.order = String((AppState.data.repairs.length || 0) + 1);
+        AppState.data.repairs.push(item);
+        showToast('เพิ่มงานซ่อมเรียบร้อย', 'success');
+    }
+
+    recomputeSummary();
+    persistData();
+    closeModal();
+    populateFilterDropdowns();
+    renderCurrentPage();
+}
+
+function confirmDelete(index) {
+    AppState.confirmCallback = () => {
+        AppState.data.repairs.splice(index, 1);
+        // Re-number
+        AppState.data.repairs.forEach((r, i) => r.order = String(i + 1));
+        recomputeSummary();
+        persistData();
+        populateFilterDropdowns();
+        renderCurrentPage();
+        showToast('ลบงานซ่อมเรียบร้อย', 'success');
+    };
+    document.getElementById('confirm-dialog').classList.add('active');
+}
+
+function confirmAction() {
+    if (AppState.confirmCallback) AppState.confirmCallback();
+    AppState.confirmCallback = null;
+    closeConfirm();
+}
+
+function closeConfirm() {
+    document.getElementById('confirm-dialog').classList.remove('active');
+}
+
+// ========================================
+// Photo Upload & Gallery
+// ========================================
+function handlePhotoUpload(e) {
+    const files = Array.from(e.target.files);
+    files.forEach(file => {
+        if (!file.type.startsWith('image/')) return;
+        if (file.size > 5 * 1024 * 1024) {
+            showToast(`${file.name} มีขนาดเกิน 5MB`, 'warning');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            AppState.editPhotos.push(ev.target.result);
+            renderPhotoGallery();
+        };
+        reader.readAsDataURL(file);
+    });
+    e.target.value = ''; // reset
+}
+
+// Drag & Drop on upload zone
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        const zone = document.getElementById('photo-upload-zone');
+        if (!zone) return;
+        zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+        zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+        zone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            zone.classList.remove('dragover');
+            const files = Array.from(e.dataTransfer.files);
+            files.forEach(file => {
+                if (!file.type.startsWith('image/') || file.size > 5 * 1024 * 1024) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    AppState.editPhotos.push(ev.target.result);
+                    renderPhotoGallery();
+                };
+                reader.readAsDataURL(file);
+            });
+        });
+    }, 500);
+});
+
+function renderPhotoGallery() {
+    const el = document.getElementById('photo-gallery');
+    if (!el) return;
+    if (!AppState.editPhotos.length) {
+        el.innerHTML = '';
+        return;
+    }
+    el.innerHTML = AppState.editPhotos.map((p, i) => `
+        <div class="photo-gallery-item">
+            <img src="${p}" alt="photo ${i+1}">
+            <button class="photo-remove" onclick="removeEditPhoto(${i})">×</button>
         </div>
     `).join('');
 }
 
-// ========================================
-// Curtains Page
-// ========================================
-function renderCurtains() {
-    const filterStatus = document.getElementById('curtains-filter-status')?.value || '';
+function removeEditPhoto(index) {
+    AppState.editPhotos.splice(index, 1);
+    renderPhotoGallery();
+}
 
-    let data = [...AppState.data.curtains];
-    if (filterStatus === 'ปกติ') data = data.filter(d => d['ปกติ'] && d['ปกติ'] !== '');
-    else if (filterStatus === 'เสีย') data = data.filter(d => d['เสีย'] && d['เสีย'] !== '');
-    if (AppState.searchQuery) {
-        data = data.filter(d =>
-            Object.values(d).some(v => v.toLowerCase().includes(AppState.searchQuery))
-        );
-    }
+// Lightbox
+function openLightbox(repairIndex, photoIndex) {
+    const r = AppState.data.repairs[repairIndex];
+    if (!r || !r.photos || !r.photos.length) return;
+    AppState.lightboxPhotos = r.photos;
+    AppState.lightboxIndex = photoIndex || 0;
+    document.getElementById('lightbox-img').src = AppState.lightboxPhotos[AppState.lightboxIndex];
+    document.getElementById('lightbox').classList.add('active');
+}
 
-    const tbody = document.getElementById('curtains-tbody');
-    if (!data.length) {
-        tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><span class="material-icons-round">search_off</span><p>ไม่พบข้อมูล</p></div></td></tr>`;
-    } else {
-        tbody.innerHTML = data.map((item, idx) => {
-            const globalIdx = AppState.data.curtains.indexOf(item);
-            const statusClass = item['เสีย'] ? 'broken' : (item['ปกติ'] ? 'normal' : '');
-            const statusText = item['เสีย'] ? `เสีย (${item['เสีย']})` : (item['ปกติ'] ? 'ปกติ' : '-');
-            return `
-            <tr>
-                <td>${escapeHtml(item['ลำดับ'])}</td>
-                <td>${escapeHtml(item['อุปกรณ์'])}</td>
-                <td>${escapeHtml(item['ตำแหน่ง'])}</td>
-                <td>${escapeHtml(item['ชั้น'])}</td>
-                <td>${statusClass ? `<span class="status-badge ${statusClass}">${statusText}</span>` : '-'}</td>
-                <td title="${escapeHtml(item['รายละเอียด'])}">${escapeHtml(item['รายละเอียด'])}</td>
-                <td>${escapeHtml(item['ตำแหน่งห้อง'])}</td>
-                <td class="actions-col">
-                    <div class="action-btns">
-                        <button class="btn-icon edit" title="แก้ไข" onclick="editItem('curtains', ${globalIdx})">
-                            <span class="material-icons-round">edit</span>
-                        </button>
-                        <button class="btn-icon delete" title="ลบ" onclick="deleteItem('curtains', ${globalIdx})">
-                            <span class="material-icons-round">delete</span>
-                        </button>
-                    </div>
-                </td>
-            </tr>
-        `}).join('');
-    }
+function closeLightbox() {
+    document.getElementById('lightbox').classList.remove('active');
+}
 
-    attachFilterListeners('curtains');
+function lightboxPrev() {
+    AppState.lightboxIndex = (AppState.lightboxIndex - 1 + AppState.lightboxPhotos.length) % AppState.lightboxPhotos.length;
+    document.getElementById('lightbox-img').src = AppState.lightboxPhotos[AppState.lightboxIndex];
+}
+
+function lightboxNext() {
+    AppState.lightboxIndex = (AppState.lightboxIndex + 1) % AppState.lightboxPhotos.length;
+    document.getElementById('lightbox-img').src = AppState.lightboxPhotos[AppState.lightboxIndex];
 }
 
 // ========================================
-// Monthly Page
+// Weekly Summary Page
 // ========================================
-function renderMonthly() {
-    // Table
-    const tbody = document.getElementById('monthly-tbody');
-    const data = AppState.data.monthly;
+function renderWeeklyPage() {
+    const weekly = AppState.data.weekly || [];
+    
+    // Find months with actual data
+    const monthsWithData = weekly.filter(w => w.weeks.some(wk => wk.reported > 0 || wk.completed > 0));
+    const allMonths = weekly.length ? weekly : THAI_MONTHS.map(m => ({ month: m, weeks: [], cumulative: {} }));
 
-    tbody.innerHTML = data.map(m => `
-        <tr>
-            <td><strong>${escapeHtml(m['เดือน'])}</strong></td>
-            <td>${escapeHtml(m['งานทั้งหมด'])}</td>
-            <td>${escapeHtml(m['เสร็จ'])}</td>
-            <td>${escapeHtml(m['รอดำเนินการ'])}</td>
-            <td>${escapeHtml(m['งานสะสม'])}</td>
-        </tr>
-    `).join('');
+    if (!AppState.selectedWeeklyMonth) {
+        AppState.selectedWeeklyMonth = monthsWithData.length ? monthsWithData[monthsWithData.length - 1].month : THAI_MONTHS[0];
+    }
+
+    // Month tabs
+    const tabsEl = document.getElementById('weekly-month-tabs');
+    if (tabsEl) {
+        tabsEl.innerHTML = allMonths.map(w => {
+            const hasData = w.weeks.some(wk => wk.reported > 0 || wk.completed > 0);
+            return `<button class="month-tab ${w.month === AppState.selectedWeeklyMonth ? 'active' : ''}" 
+                onclick="selectWeeklyMonth('${w.month}')" ${!hasData ? 'style="opacity:0.4"' : ''}>${w.month}</button>`;
+        }).join('');
+    }
+
+    // Find current month data
+    const current = weekly.find(w => w.month === AppState.selectedWeeklyMonth) || { weeks: [], cumulative: {} };
 
     // Chart
-    renderMonthlyDetailChart();
+    renderWeeklyChart(current);
+
+    // Table
+    const tbody = document.getElementById('weekly-tbody');
+    if (tbody) {
+        if (!current.weeks.length || !current.weeks.some(w => w.reported || w.completed)) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-tertiary);padding:24px">ยังไม่มีข้อมูลสำหรับเดือนนี้</td></tr>';
+        } else {
+            let html = current.weeks.map(w => `
+                <tr>
+                    <td><strong>สัปดาห์ ${w.week}</strong></td>
+                    <td>${w.reported}</td>
+                    <td>${w.completed}</td>
+                    <td>${w.remaining}</td>
+                </tr>
+            `).join('');
+            
+            if (current.cumulative && (current.cumulative.reported || current.cumulative.completed)) {
+                html += `<tr style="font-weight:700;background:var(--bg-table-header)">
+                    <td>รวมสะสม</td>
+                    <td>${current.cumulative.reported || 0}</td>
+                    <td>${current.cumulative.completed || 0}</td>
+                    <td>${current.cumulative.remaining || 0}</td>
+                </tr>`;
+            }
+            tbody.innerHTML = html;
+        }
+    }
 }
 
-function renderMonthlyDetailChart() {
-    const ctx = document.getElementById('monthly-detail-chart');
+function selectWeeklyMonth(month) {
+    AppState.selectedWeeklyMonth = month;
+    renderWeeklyPage();
+}
+
+function renderWeeklyChart(monthData) {
+    const ctx = document.getElementById('weekly-chart');
     if (!ctx) return;
+    if (AppState.charts.weekly) AppState.charts.weekly.destroy();
 
-    if (AppState.charts.monthlyDetail) AppState.charts.monthlyDetail.destroy();
+    const weeks = monthData.weeks || [];
+    const labels = weeks.map(w => `สัปดาห์ ${w.week}`);
 
-    const monthly = AppState.data.monthly.filter(m => m['งานทั้งหมด'] && m['งานทั้งหมด'] !== '');
-    const labels = monthly.map(m => m['เดือน']);
-    const total = monthly.map(m => parseInt(m['งานทั้งหมด']) || 0);
-    const done = monthly.map(m => parseInt(m['เสร็จ']) || 0);
-    const pending = monthly.map(m => parseInt(m['รอดำเนินการ']) || 0);
-
-    AppState.charts.monthlyDetail = new Chart(ctx, {
+    AppState.charts.weekly = new Chart(ctx, {
         type: 'bar',
         data: {
             labels,
             datasets: [
                 {
-                    label: 'งานทั้งหมด',
-                    data: total,
-                    backgroundColor: 'rgba(220, 38, 38, 0.7)',
-                    borderColor: '#dc2626',
-                    borderWidth: 1,
-                    borderRadius: 6,
+                    label: 'แจ้งซ่อม',
+                    data: weeks.map(w => w.reported),
+                    backgroundColor: CHART_COLORS.blueBg,
+                    borderColor: CHART_COLORS.blue,
+                    borderWidth: 1.5,
+                    borderRadius: 8,
+                    barPercentage: 0.6,
                 },
                 {
-                    label: 'เสร็จ',
-                    data: done,
-                    backgroundColor: 'rgba(34, 197, 94, 0.7)',
-                    borderColor: '#22c55e',
-                    borderWidth: 1,
-                    borderRadius: 6,
+                    label: 'สำเร็จ',
+                    data: weeks.map(w => w.completed),
+                    backgroundColor: CHART_COLORS.greenBg,
+                    borderColor: CHART_COLORS.green,
+                    borderWidth: 1.5,
+                    borderRadius: 8,
+                    barPercentage: 0.6,
                 },
                 {
-                    label: 'รอดำเนินการ',
-                    data: pending,
-                    backgroundColor: 'rgba(245, 158, 11, 0.7)',
-                    borderColor: '#f59e0b',
-                    borderWidth: 1,
-                    borderRadius: 6,
-                }
+                    label: 'คงค้าง',
+                    data: weeks.map(w => w.remaining),
+                    type: 'line',
+                    borderColor: CHART_COLORS.amber,
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    pointRadius: 5,
+                    pointBackgroundColor: CHART_COLORS.amber,
+                    yAxisID: 'y',
+                },
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: {
-                    labels: {
-                        color: '#a3a3a3',
-                        font: { family: "'Noto Sans Thai', sans-serif", size: 12 },
-                        usePointStyle: true,
-                        pointStyle: 'circle',
-                        padding: 20
-                    }
-                },
-                tooltip: {
-                    backgroundColor: '#262626',
-                    titleColor: '#fafafa',
-                    bodyColor: '#a3a3a3',
-                    borderColor: '#333',
-                    borderWidth: 1,
-                    padding: 12,
-                    cornerRadius: 8,
-                    titleFont: { family: "'Noto Sans Thai', sans-serif" },
-                    bodyFont: { family: "'Noto Sans Thai', sans-serif" },
-                }
+                legend: { position: 'top', labels: { usePointStyle: true, padding: 16, font: { family: "'Noto Sans Thai'", size: 12 } } },
             },
             scales: {
-                x: {
-                    grid: { color: 'rgba(255,255,255,0.04)' },
-                    ticks: {
-                        color: '#737373',
-                        font: { family: "'Noto Sans Thai', sans-serif", size: 11 }
-                    }
-                },
-                y: {
-                    grid: { color: 'rgba(255,255,255,0.04)' },
-                    ticks: {
-                        color: '#737373',
-                        font: { family: "'Noto Sans Thai', sans-serif", size: 11 }
-                    },
-                    beginAtZero: true
-                }
+                y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { family: "'Noto Sans Thai'" } } },
+                x: { grid: { display: false }, ticks: { font: { family: "'Noto Sans Thai'" } } },
             }
         }
     });
 }
 
 // ========================================
-// Pagination
+// Monthly Analysis Page
 // ========================================
-function renderPagination(source, currentPage, totalPages, totalItems) {
-    const container = document.getElementById(`${source}-pagination`);
-    if (!container) return;
+function renderAnalysisPage() {
+    const analysis = AppState.data.analysis || [];
+    if (!analysis.length) return;
 
-    if (totalPages <= 1) {
-        container.innerHTML = `<span class="pagination-info">แสดง ${totalItems} รายการ</span>`;
+    if (!AppState.selectedAnalysisMonth) {
+        AppState.selectedAnalysisMonth = analysis[0].month;
+    }
+
+    // Month tabs
+    const tabsEl = document.getElementById('analysis-month-tabs');
+    if (tabsEl) {
+        tabsEl.innerHTML = analysis.map(a =>
+            `<button class="month-tab ${a.month === AppState.selectedAnalysisMonth ? 'active' : ''}"
+                onclick="selectAnalysisMonth('${a.month}')">${a.month}</button>`
+        ).join('');
+    }
+
+    const current = analysis.find(a => a.month === AppState.selectedAnalysisMonth) || analysis[0];
+
+    // Type donut chart
+    renderAnalysisTypeChart(current);
+    // Department bar chart
+    renderAnalysisDeptChart(current);
+    // Department cards grid
+    renderAnalysisDeptGrid(current);
+}
+
+function selectAnalysisMonth(month) {
+    AppState.selectedAnalysisMonth = month;
+    renderAnalysisPage();
+}
+
+function renderAnalysisTypeChart(monthData) {
+    const ctx = document.getElementById('analysis-type-chart');
+    if (!ctx) return;
+    if (AppState.charts.analysisType) AppState.charts.analysisType.destroy();
+
+    const types = monthData.repairTypes || [];
+    if (!types.length) return;
+
+    const colors = [CHART_COLORS.blue, CHART_COLORS.green, CHART_COLORS.amber, CHART_COLORS.red,
+                    CHART_COLORS.purple, '#06B6D4', '#EC4899', '#8B5CF6', '#14B8A6', '#F97316'];
+
+    AppState.charts.analysisType = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: types.map(t => t.type),
+            datasets: [{
+                data: types.map(t => t.count),
+                backgroundColor: types.map((_, i) => colors[i % colors.length]),
+                borderWidth: 0,
+                hoverOffset: 6,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '60%',
+            plugins: {
+                legend: { position: 'bottom', labels: { usePointStyle: true, padding: 10, font: { family: "'Noto Sans Thai'", size: 11 } } }
+            }
+        }
+    });
+}
+
+function renderAnalysisDeptChart(monthData) {
+    const ctx = document.getElementById('analysis-dept-chart');
+    if (!ctx) return;
+    if (AppState.charts.analysisDept) AppState.charts.analysisDept.destroy();
+
+    const depts = (monthData.departments || []).filter(d => d.count > 0).sort((a, b) => b.count - a.count);
+    if (!depts.length) return;
+
+    AppState.charts.analysisDept = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: depts.map(d => d.name),
+            datasets: [{
+                label: 'จำนวนแจ้งซ่อม',
+                data: depts.map(d => d.count),
+                backgroundColor: CHART_COLORS.blueBg,
+                borderColor: CHART_COLORS.blue,
+                borderWidth: 1.5,
+                borderRadius: 6,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: 'y',
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { family: "'Noto Sans Thai'" } } },
+                y: { grid: { display: false }, ticks: { font: { family: "'Noto Sans Thai'", size: 11 } } },
+            }
+        }
+    });
+}
+
+function renderAnalysisDeptGrid(monthData) {
+    const el = document.getElementById('analysis-dept-grid');
+    if (!el) return;
+    const depts = (monthData.departments || []).filter(d => d.count > 0).sort((a, b) => b.count - a.count);
+    const maxCount = depts.length ? depts[0].count : 1;
+
+    el.innerHTML = depts.map(d => `
+        <div class="dept-card">
+            <div class="dept-card-header">
+                <span class="dept-name">${escHtml(d.name)}</span>
+                <span class="dept-count">${d.count}</span>
+            </div>
+            <div class="dept-bar">
+                <div class="dept-bar-fill" style="width:${Math.round((d.count / maxCount) * 100)}%"></div>
+            </div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px">
+                ${Object.entries(d.types || {}).map(([type, count]) => 
+                    `<span style="font-size:10px;padding:2px 6px;border-radius:99px;background:rgba(59,130,246,0.08);color:var(--blue-600)">${type}: ${count}</span>`
+                ).join('')}
+            </div>
+        </div>
+    `).join('');
+}
+
+// ========================================
+// Google Sheets Login
+// ========================================
+function handleGoogleLogin() {
+    const urlInput = document.getElementById('login-sheet-url');
+    const url = urlInput ? urlInput.value.trim() : '';
+
+    if (!url) {
+        showToast('กรุณาวางลิงก์', 'warning');
         return;
     }
 
-    let html = '';
-    html += `<button class="pagination-btn" ${currentPage === 1 ? 'disabled' : ''} onclick="goToPage('${source}', ${currentPage - 1})">
-        <span class="material-icons-round" style="font-size:16px">chevron_left</span>
-    </button>`;
-
-    const maxButtons = 5;
-    let start = Math.max(1, currentPage - Math.floor(maxButtons / 2));
-    let end = Math.min(totalPages, start + maxButtons - 1);
-    if (end - start < maxButtons - 1) start = Math.max(1, end - maxButtons + 1);
-
-    if (start > 1) {
-        html += `<button class="pagination-btn" onclick="goToPage('${source}', 1)">1</button>`;
-        if (start > 2) html += `<span class="pagination-info">...</span>`;
+    // Check if it's a valid Sheet URL or Apps Script URL
+    const isSheet = url.includes('/spreadsheets/d/');
+    const isScript = url.includes('script.google.com');
+    
+    if (!isSheet && !isScript) {
+        showToast('ลิงก์ไม่ถูกต้อง กรุณาวาง URL ของ Google Sheet หรือ Apps Script', 'error');
+        return;
     }
 
-    for (let i = start; i <= end; i++) {
-        html += `<button class="pagination-btn ${i === currentPage ? 'active' : ''}" onclick="goToPage('${source}', ${i})">${i}</button>`;
+    AppState.sheetUrl = url;
+    let sheetId = 'AppsScript';
+    if (isSheet) {
+        const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+        if (match) sheetId = match[1];
     }
+    
+    localStorage.setItem('mtc_sheet_id', sheetId);
+    localStorage.setItem('mtc_sheet_url', url);
 
-    if (end < totalPages) {
-        if (end < totalPages - 1) html += `<span class="pagination-info">...</span>`;
-        html += `<button class="pagination-btn" onclick="goToPage('${source}', ${totalPages})">${totalPages}</button>`;
-    }
+    showToast(`เชื่อมต่อ Sheet ID: ${sheetId.substring(0, 12)}...`, 'success');
 
-    html += `<button class="pagination-btn" ${currentPage === totalPages ? 'disabled' : ''} onclick="goToPage('${source}', ${currentPage + 1})">
-        <span class="material-icons-round" style="font-size:16px">chevron_right</span>
-    </button>`;
+    // Hide login, show app
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('app').style.display = 'flex';
 
-    html += `<span class="pagination-info">หน้า ${currentPage}/${totalPages} (${totalItems} รายการ)</span>`;
-
-    container.innerHTML = html;
+    // Update sync status
+    updateSyncStatus('live');
+    renderCurrentPage();
 }
 
-function goToPage(source, page) {
-    if (AppState.pagination[source]) {
-        AppState.pagination[source].page = page;
-        renderPage(AppState.currentPage);
-    }
+function handleOfflineMode() {
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('app').style.display = 'flex';
+    updateSyncStatus('offline');
+    renderCurrentPage();
 }
 
-// ========================================
-// CRUD Operations
-// ========================================
+function updateSyncStatus(state) {
+    const dot = document.getElementById('sync-dot');
+    const text = document.getElementById('sync-text');
+    if (!dot || !text) return;
 
-// --- ADD ---
-function initModals() {
-    // Add buttons
-    document.getElementById('add-planned-btn')?.addEventListener('click', () => openAddModal('planned'));
-    document.getElementById('add-request-btn')?.addEventListener('click', () => openAddModal('requests'));
-    document.getElementById('add-warehouse-btn')?.addEventListener('click', () => openAddModal('warehouse'));
-    document.getElementById('add-leak-btn')?.addEventListener('click', () => openAddModal('leaks'));
-    document.getElementById('add-curtain-btn')?.addEventListener('click', () => openAddModal('curtains'));
-
-    // Modal close
-    document.getElementById('modal-close')?.addEventListener('click', closeModal);
-    document.getElementById('modal-cancel-btn')?.addEventListener('click', closeModal);
-    document.getElementById('modal-overlay')?.addEventListener('click', (e) => {
-        if (e.target === e.currentTarget) closeModal();
-    });
-
-    // Confirm close
-    document.getElementById('confirm-close')?.addEventListener('click', closeConfirm);
-    document.getElementById('confirm-cancel-btn')?.addEventListener('click', closeConfirm);
-    document.getElementById('confirm-overlay')?.addEventListener('click', (e) => {
-        if (e.target === e.currentTarget) closeConfirm();
-    });
-
-    // Move close
-    document.getElementById('move-close')?.addEventListener('click', closeMoveModal);
-    document.getElementById('move-cancel-btn')?.addEventListener('click', closeMoveModal);
-    document.getElementById('move-overlay')?.addEventListener('click', (e) => {
-        if (e.target === e.currentTarget) closeMoveModal();
-    });
-
-    // Save button
-    document.getElementById('modal-save-btn')?.addEventListener('click', handleSave);
-}
-
-function openAddModal(source) {
-    AppState.editingItem = null;
-    AppState.editingSource = source;
-    document.getElementById('modal-title').textContent = getAddTitle(source);
-    document.getElementById('modal-body').innerHTML = getFormHTML(source, null);
-    document.getElementById('modal-overlay').classList.remove('hidden');
-    AppState.modalOpen = true;
-}
-
-function openEditModal(source, item) {
-    AppState.editingSource = source;
-    document.getElementById('modal-title').textContent = getEditTitle(source);
-    document.getElementById('modal-body').innerHTML = getFormHTML(source, item);
-    document.getElementById('modal-overlay').classList.remove('hidden');
-    AppState.modalOpen = true;
-}
-
-function closeModal() {
-    document.getElementById('modal-overlay').classList.add('hidden');
-    AppState.editingItem = null;
-    AppState.editingSource = null;
-    AppState.modalOpen = false;
-}
-
-function getAddTitle(source) {
-    const titles = {
-        planned: 'เพิ่มงานซ่อมตามแผน',
-        requests: 'เพิ่มการแจ้งซ่อม',
-        warehouse: 'เพิ่มงานในคลัง',
-        leaks: 'เพิ่มตำแหน่งน้ำรั่ว',
-        curtains: 'เพิ่มรายการม่าน'
-    };
-    return titles[source] || 'เพิ่มข้อมูล';
-}
-
-function getEditTitle(source) {
-    const titles = {
-        planned: 'แก้ไขงานซ่อมตามแผน',
-        requests: 'แก้ไขการแจ้งซ่อม',
-        warehouse: 'แก้ไขงานในคลัง',
-        leaks: 'แก้ไขตำแหน่งน้ำรั่ว',
-        curtains: 'แก้ไขรายการม่าน'
-    };
-    return titles[source] || 'แก้ไขข้อมูล';
-}
-
-function getFormHTML(source, item) {
-    const v = (key) => item ? escapeHtml(item[key] || '') : '';
-
-    switch (source) {
-        case 'planned':
-            return `
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>รหัสงานซ่อม</label>
-                        <input class="form-input" id="f-code" value="${v('รหัสงานซ่อม')}" placeholder="MTC-MT-2026XXXX">
-                    </div>
-                    <div class="form-group">
-                        <label>เดือน</label>
-                        <select class="form-input" id="f-month">
-                            ${['เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม'].map(m =>
-                `<option value="${m}" ${v('เดือน') === m ? 'selected' : ''}>${m}</option>`
-            ).join('')}
-                        </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>หัวข้อ</label>
-                    <input class="form-input" id="f-title" value="${v('หัวข้อ')}" placeholder="รายละเอียดงานซ่อม">
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>ชั้น</label>
-                        <input class="form-input" id="f-floor" value="${v('ชั้น')}" placeholder="ชั้น G, 1, 2...">
-                    </div>
-                    <div class="form-group">
-                        <label>ประเภท</label>
-                        <select class="form-input" id="f-type">
-                            ${['ไฟฟ้า', 'ประปา', 'สุขภัณฑ์', 'ม่าน', 'ฝ้า', 'ประตู', 'ขอบคิ้ว', 'อุปกรณ์', 'ระบบแอร์', 'เก้าอี้', 'อื่นๆ'].map(t =>
-                `<option value="${t}" ${v('ประเภท') === t ? 'selected' : ''}>${t}</option>`
-            ).join('')}
-                        </select>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>ตำแหน่ง</label>
-                        <input class="form-input" id="f-location" value="${v('ตำแหน่ง')}" placeholder="ตำแหน่งงาน">
-                    </div>
-                    <div class="form-group">
-                        <label>ผู้รับผิดชอบ</label>
-                        <input class="form-input" id="f-responsible" value="${v('ผู้รับผิดชอบ')}" placeholder="ชื่อผู้รับผิดชอบ">
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>ความสำคัญ</label>
-                        <select class="form-input" id="f-importance">
-                            <option value="" ${!v('ความสำคัญ') ? 'selected' : ''}>-</option>
-                            <option value="สำคัญ" ${v('ความสำคัญ') === 'สำคัญ' ? 'selected' : ''}>สำคัญ</option>
-                            <option value="ไม่สำคัญ" ${v('ความสำคัญ') === 'ไม่สำคัญ' ? 'selected' : ''}>ไม่สำคัญ</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>สถานะ</label>
-                        <select class="form-input" id="f-status">
-                            <option value="รอดำเนินการ" ${v('สำเร็จ') === 'รอดำเนินการ' ? 'selected' : ''}>รอดำเนินการ</option>
-                            <option value="กำลังดำเนินการ" ${v('สำเร็จ') === 'กำลังดำเนินการ' ? 'selected' : ''}>กำลังดำเนินการ</option>
-                            <option value="เสร็จสิ้น" ${v('สำเร็จ') === 'เสร็จสิ้น' ? 'selected' : ''}>เสร็จสิ้น</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>หมายเหตุ</label>
-                    <input class="form-input" id="f-note" value="${v('หมายเหตุ')}" placeholder="หมายเหตุเพิ่มเติม">
-                </div>
-            `;
-
-        case 'requests':
-            return `
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>ชื่อผู้แจ้งซ่อม</label>
-                        <input class="form-input" id="f-reporter" value="${v('ชื่อผู้แจ้งซ่อม')}" placeholder="ชื่อ">
-                    </div>
-                    <div class="form-group">
-                        <label>แจ้งผ่าน</label>
-                        <select class="form-input" id="f-channel">
-                            <option value="Line" ${v('แจ้งผ่าน') === 'Line' ? 'selected' : ''}>Line</option>
-                            <option value="ส่วนตัว" ${v('แจ้งผ่าน') === 'ส่วนตัว' ? 'selected' : ''}>ส่วนตัว</option>
-                            <option value="โทรศัพท์" ${v('แจ้งผ่าน') === 'โทรศัพท์' ? 'selected' : ''}>โทรศัพท์</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>ฝ่าย</label>
-                        <input class="form-input" id="f-dept" value="${v('ฝ่าย')}" placeholder="ฝ่าย/แผนก">
-                    </div>
-                    <div class="form-group">
-                        <label>ประเภท</label>
-                        <select class="form-input" id="f-type">
-                            ${['ไฟฟ้า', 'ประปา', 'สุขภัณฑ์', 'ม่าน', 'ฝ้า', 'ประตู', 'ขอบคิ้ว', 'อุปกรณ์', 'ระบบแอร์', 'เก้าอี้', 'อื่นๆ'].map(t =>
-                `<option value="${t}" ${v('ประเภท') === t ? 'selected' : ''}>${t}</option>`
-            ).join('')}
-                        </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>เรื่อง</label>
-                    <input class="form-input" id="f-subject" value="${v('เรื่อง')}" placeholder="รายละเอียดการแจ้งซ่อม">
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>ชั้น</label>
-                        <input class="form-input" id="f-floor" value="${v('ชั้น')}" placeholder="ชั้น">
-                    </div>
-                    <div class="form-group">
-                        <label>ตำแหน่ง</label>
-                        <input class="form-input" id="f-location" value="${v('ตำแหน่ง')}" placeholder="ตำแหน่ง">
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>สถานะ</label>
-                        <select class="form-input" id="f-status">
-                            <option value="รอดำเนินการ" ${v('สถานะ') === 'รอดำเนินการ' ? 'selected' : ''}>รอดำเนินการ</option>
-                            <option value="กำลังดำเนินการ" ${v('สถานะ') === 'กำลังดำเนินการ' ? 'selected' : ''}>กำลังดำเนินการ</option>
-                            <option value="เรียบร้อย" ${v('สถานะ') === 'เรียบร้อย' ? 'selected' : ''}>เรียบร้อย</option>
-                            <option value="โอนย้าย" ${v('สถานะ') === 'โอนย้าย' ? 'selected' : ''}>โอนย้าย</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>วันที่แจ้งซ่อม</label>
-                        <input type="date" class="form-input" id="f-date" value="${formatDateForInput(v('วันที่แจ้งซ่อม'))}">
-                    </div>
-                </div>
-            `;
-
-        case 'warehouse':
-            return `
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>ผู้แจ้ง</label>
-                        <input class="form-input" id="f-reporter" value="${v('ผู้แจ้ง')}" placeholder="ชื่อผู้แจ้ง">
-                    </div>
-                    <div class="form-group">
-                        <label>ฝ่าย</label>
-                        <input class="form-input" id="f-dept" value="${v('ฝ่าย')}" placeholder="ฝ่าย">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>รายละเอียด</label>
-                    <input class="form-input" id="f-detail" value="${v('รายละเอียด')}" placeholder="รายละเอียดงาน">
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>ชั้น</label>
-                        <input class="form-input" id="f-floor" value="${v('ชั้น')}" placeholder="ชั้น">
-                    </div>
-                    <div class="form-group">
-                        <label>ประเภท</label>
-                        <select class="form-input" id="f-type">
-                            ${['ไฟฟ้า', 'ประปา', 'สุขภัณฑ์', 'ม่าน', 'ฝ้า', 'ประตู', 'ขอบคิ้ว', 'อุปกรณ์', 'ระบบแอร์', 'เก้าอี้', 'อื่นๆ'].map(t =>
-                `<option value="${t}" ${v('ประเภท') === t ? 'selected' : ''}>${t}</option>`
-            ).join('')}
-                        </select>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>สถานะงาน</label>
-                        <select class="form-input" id="f-status">
-                            <option value="รอดำเนินการ" ${v('สถานะงาน') === 'รอดำเนินการ' ? 'selected' : ''}>รอดำเนินการ</option>
-                            <option value="กำลังดำเนินการ" ${v('สถานะงาน') === 'กำลังดำเนินการ' ? 'selected' : ''}>กำลังดำเนินการ</option>
-                            <option value="สำเร็จ" ${v('สถานะงาน') === 'สำเร็จ' ? 'selected' : ''}>สำเร็จ</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>ความเร่งด่วน</label>
-                        <select class="form-input" id="f-urgency">
-                            <option value="เร่งด่วน" ${v('ความเร่งด่วน') === 'เร่งด่วน' ? 'selected' : ''}>เร่งด่วน</option>
-                            <option value="ไม่เร่งด่วน" ${v('ความเร่งด่วน') === 'ไม่เร่งด่วน' ? 'selected' : ''}>ไม่เร่งด่วน</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>วันที่แจ้ง</label>
-                    <input type="date" class="form-input" id="f-date" value="${formatDateForInput(v('วันที่แจ้ง'))}">
-                </div>
-            `;
-
-        case 'leaks':
-            return `
-                <div class="form-group">
-                    <label>ชั้น</label>
-                    <input class="form-input" id="f-floor" value="${v('ชั้น')}" placeholder="หมายเลขชั้น">
-                </div>
-                <div class="form-group">
-                    <label>ตำแหน่ง</label>
-                    <input class="form-input" id="f-location" value="${v('ตำแหน่ง')}" placeholder="ตำแหน่งที่พบน้ำรั่ว">
-                </div>
-                <div class="form-group">
-                    <label>รายละเอียด</label>
-                    <input class="form-input" id="f-detail" value="${v('รายละเอียด')}" placeholder="รายละเอียดเพิ่มเติม">
-                </div>
-            `;
-
-        case 'curtains':
-            return `
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>อุปกรณ์</label>
-                        <input class="form-input" id="f-equipment" value="${v('อุปกรณ์')}" placeholder="ม่าน">
-                    </div>
-                    <div class="form-group">
-                        <label>ชั้น</label>
-                        <input class="form-input" id="f-floor" value="${v('ชั้น')}" placeholder="ชั้น">
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>ตำแหน่ง</label>
-                        <input class="form-input" id="f-location" value="${v('ตำแหน่ง')}" placeholder="ตำแหน่ง">
-                    </div>
-                    <div class="form-group">
-                        <label>ตำแหน่งห้อง</label>
-                        <input class="form-input" id="f-room" value="${v('ตำแหน่งห้อง')}" placeholder="ห้อง">
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>สถานะ</label>
-                        <select class="form-input" id="f-condition">
-                            <option value="normal" ${v('ปกติ') ? 'selected' : ''}>ปกติ (N)</option>
-                            <option value="broken" ${v('เสีย') ? 'selected' : ''}>เสีย (AB)</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>รายละเอียด</label>
-                        <input class="form-input" id="f-detail" value="${v('รายละเอียด')}" placeholder="รายละเอียด">
-                    </div>
-                </div>
-            `;
-
+    dot.className = 'sync-dot ' + state;
+    switch (state) {
+        case 'live':
+            text.textContent = 'เชื่อมต่อแล้ว';
+            break;
+        case 'syncing':
+            text.textContent = 'กำลังซิงค์...';
+            break;
+        case 'offline':
         default:
-            return '<p>ไม่พบฟอร์ม</p>';
+            text.textContent = 'ออฟไลน์';
     }
-}
-
-async function handleSave() {
-    const source = AppState.editingSource;
-    if (!source) return;
-
-    let newItem;
-    switch (source) {
-        case 'planned':
-            newItem = {
-                'รหัสงานซ่อม': document.getElementById('f-code')?.value || '',
-                'หัวข้อ': document.getElementById('f-title')?.value || '',
-                'ชั้น': document.getElementById('f-floor')?.value || '',
-                'งานเพิ่มเติม': '',
-                'ประเภท': document.getElementById('f-type')?.value || '',
-                'ตำแหน่ง': document.getElementById('f-location')?.value || '',
-                'ผู้รับผิดชอบ': document.getElementById('f-responsible')?.value || '',
-                'หมายเหตุ': document.getElementById('f-note')?.value || '',
-                'ระดับ': '',
-                'ความสำคัญ': document.getElementById('f-importance')?.value || '',
-                'ความเร่งด่วน': '',
-                'สำเร็จ': document.getElementById('f-status')?.value || 'รอดำเนินการ',
-                'วันที่เข้าแก้ไข': '',
-                'จำนวนคนที่ใช้': '',
-                'เวลาที่ใช้ (นาที)': '',
-                'ค่าใช้จ่าย (บาท)': '',
-                'วิธีแก้ไข': '',
-                'เดือน': document.getElementById('f-month')?.value || '',
-                'สัปดาห์': ''
-            };
-            if (!newItem['หัวข้อ']) { showToast('กรุณาระบุหัวข้อ', 'warning'); return; }
-            break;
-
-        case 'requests':
-            newItem = {
-                'ลำดับ': '',
-                'ชื่อผู้แจ้งซ่อม': document.getElementById('f-reporter')?.value || '',
-                'ฝ่าย': document.getElementById('f-dept')?.value || '',
-                'แจ้งผ่าน': document.getElementById('f-channel')?.value || '',
-                'เรื่อง': document.getElementById('f-subject')?.value || '',
-                'ชั้น': document.getElementById('f-floor')?.value || '',
-                'ประเภท': document.getElementById('f-type')?.value || '',
-                'วันที่แจ้งซ่อม': document.getElementById('f-date')?.value || '',
-                'ตำแหน่ง': document.getElementById('f-location')?.value || '',
-                'สถานะ': document.getElementById('f-status')?.value || 'รอดำเนินการ',
-                'วันที่เข้าแก้ไข': ''
-            };
-            if (!newItem['เรื่อง']) { showToast('กรุณาระบุเรื่อง', 'warning'); return; }
-            break;
-
-        case 'warehouse':
-            newItem = {
-                'ลำดับ': '',
-                'วันที่แจ้ง': document.getElementById('f-date')?.value || '',
-                'งานของเดือน': '',
-                'ผู้แจ้ง': document.getElementById('f-reporter')?.value || '',
-                'ฝ่าย': document.getElementById('f-dept')?.value || '',
-                'ชั้น': document.getElementById('f-floor')?.value || '',
-                'รายละเอียด': document.getElementById('f-detail')?.value || '',
-                'ประเภท': document.getElementById('f-type')?.value || '',
-                'โอนย้ายซ่อมในเดือน': '',
-                'สถานะงาน': document.getElementById('f-status')?.value || 'รอดำเนินการ',
-                'ความเร่งด่วน': document.getElementById('f-urgency')?.value || ''
-            };
-            if (!newItem['รายละเอียด']) { showToast('กรุณาระบุรายละเอียด', 'warning'); return; }
-            break;
-
-        case 'leaks':
-            newItem = {
-                'ลำดับ': String(AppState.data.leaks.length + 1),
-                'ชั้น': document.getElementById('f-floor')?.value || '',
-                'ตำแหน่ง': document.getElementById('f-location')?.value || '',
-                'รายละเอียด': document.getElementById('f-detail')?.value || ''
-            };
-            if (!newItem['ชั้น']) { showToast('กรุณาระบุชั้น', 'warning'); return; }
-            break;
-
-        case 'curtains':
-            const condition = document.getElementById('f-condition')?.value;
-            newItem = {
-                'ลำดับ': String(AppState.data.curtains.length + 1),
-                'อุปกรณ์': document.getElementById('f-equipment')?.value || 'ม่าน',
-                'ตำแหน่ง': document.getElementById('f-location')?.value || '',
-                'ชั้น': document.getElementById('f-floor')?.value || '',
-                'ปกติ': condition === 'normal' ? 'N' : '',
-                'เสีย': condition === 'broken' ? 'AB' : '',
-                'รายละเอียด': document.getElementById('f-detail')?.value || '',
-                'ตำแหน่งห้อง': document.getElementById('f-room')?.value || ''
-            };
-            break;
-    }
-
-    if (AppState.editingItem !== null) {
-        // Edit existing
-        AppState.data[source][AppState.editingItem] = newItem;
-
-        // Sync to Google Sheets
-        if (AppState.useGoogleSheets && AppState.isOnline) {
-            try {
-                updateSyncStatus('syncing');
-                await GoogleSheetsDB.updateRow(source, AppState.editingItem, newItem);
-            } catch (err) {
-                console.warn('Failed to sync edit to Google Sheets:', err);
-                showToast('แก้ไขในเครื่องสำเร็จ แต่ไม่สามารถซิงค์ได้', 'warning');
-            }
-        }
-        showToast('แก้ไขข้อมูลสำเร็จ', 'success');
-    } else {
-        // Add new - reindex
-        if (source === 'requests') {
-            newItem['ลำดับ'] = String(AppState.data.requests.length + 1);
-        } else if (source === 'warehouse') {
-            newItem['ลำดับ'] = String(AppState.data.warehouse.length + 1);
-        }
-        AppState.data[source].push(newItem);
-
-        // Sync to Google Sheets
-        if (AppState.useGoogleSheets && AppState.isOnline) {
-            try {
-                updateSyncStatus('syncing');
-                await GoogleSheetsDB.appendRow(source, newItem);
-            } catch (err) {
-                console.warn('Failed to sync add to Google Sheets:', err);
-                showToast('เพิ่มในเครื่องสำเร็จ แต่ไม่สามารถซิงค์ได้', 'warning');
-            }
-        }
-        showToast('เพิ่มข้อมูลสำเร็จ', 'success');
-    }
-
-    recalculateSummary();
-    await saveData();
-    closeModal();
-    renderPage(AppState.currentPage);
-}
-
-// --- EDIT ---
-function editItem(source, index) {
-    AppState.editingItem = index;
-    const item = AppState.data[source][index];
-    if (!item) return;
-    openEditModal(source, item);
-}
-
-// --- DELETE ---
-function deleteItem(source, index) {
-    const overlay = document.getElementById('confirm-overlay');
-    const item = AppState.data[source][index];
-    if (!item) return;
-
-    const label = item['หัวข้อ'] || item['เรื่อง'] || item['รายละเอียด'] || item['ตำแหน่ง'] || `รายการที่ ${index + 1}`;
-    document.getElementById('confirm-message').textContent = `คุณต้องการลบ "${label}" หรือไม่?`;
-    overlay.classList.remove('hidden');
-
-    const okBtn = document.getElementById('confirm-ok-btn');
-    const newOkBtn = okBtn.cloneNode(true);
-    okBtn.parentNode.replaceChild(newOkBtn, okBtn);
-
-    newOkBtn.addEventListener('click', async () => {
-        AppState.data[source].splice(index, 1);
-
-        // Sync to Google Sheets
-        if (AppState.useGoogleSheets && AppState.isOnline) {
-            try {
-                updateSyncStatus('syncing');
-                await GoogleSheetsDB.deleteRow(source, index);
-            } catch (err) {
-                console.warn('Failed to sync delete to Google Sheets:', err);
-                showToast('ลบในเครื่องสำเร็จ แต่ไม่สามารถซิงค์ได้', 'warning');
-            }
-        }
-
-        recalculateSummary();
-        await saveData();
-        closeConfirm();
-        renderPage(AppState.currentPage);
-        showToast('ลบข้อมูลสำเร็จ', 'success');
-    });
-}
-
-function closeConfirm() {
-    document.getElementById('confirm-overlay').classList.add('hidden');
-}
-
-// --- MOVE ---
-function moveItem(source, index) {
-    const overlay = document.getElementById('move-overlay');
-    const item = AppState.data[source][index];
-    if (!item) return;
-
-    const label = item['หัวข้อ'] || item['เรื่อง'] || item['รายละเอียด'] || `รายการที่ ${index + 1}`;
-    document.getElementById('move-info').textContent = `โอนย้าย "${label}" จาก ${getPageName(source)}`;
-
-    // Set current options
-    const dest = document.getElementById('move-destination');
-    dest.innerHTML = '';
-    const pages = { planned: 'งานซ่อมตามแผน', requests: 'แจ้งซ่อมเพิ่มเติม', warehouse: 'คลังงานซ่อม' };
-    Object.entries(pages).forEach(([key, name]) => {
-        if (key !== source) {
-            const opt = document.createElement('option');
-            opt.value = key;
-            opt.textContent = name;
-            dest.appendChild(opt);
-        }
-    });
-
-    overlay.classList.remove('hidden');
-
-    const okBtn = document.getElementById('move-ok-btn');
-    const newOkBtn = okBtn.cloneNode(true);
-    okBtn.parentNode.replaceChild(newOkBtn, okBtn);
-
-    newOkBtn.addEventListener('click', async () => {
-        const destination = document.getElementById('move-destination').value;
-        const movedItem = AppState.data[source].splice(index, 1)[0];
-
-        // Convert item fields to match destination
-        const converted = convertItemForDestination(movedItem, source, destination);
-        AppState.data[destination].push(converted);
-
-        // Sync to Google Sheets
-        if (AppState.useGoogleSheets && AppState.isOnline) {
-            try {
-                updateSyncStatus('syncing');
-                await GoogleSheetsDB.deleteRow(source, index);
-                await GoogleSheetsDB.appendRow(destination, converted);
-            } catch (err) {
-                console.warn('Failed to sync move to Google Sheets:', err);
-                showToast('ย้ายในเครื่องสำเร็จ แต่ไม่สามารถซิงค์ได้', 'warning');
-            }
-        }
-
-        recalculateSummary();
-        await saveData();
-        closeMoveModal();
-        renderPage(AppState.currentPage);
-        showToast(`ย้ายไปยัง ${pages[destination]} สำเร็จ`, 'success');
-    });
-}
-
-function closeMoveModal() {
-    document.getElementById('move-overlay').classList.add('hidden');
-}
-
-function convertItemForDestination(item, from, to) {
-    // Basic field mapping between different data sources
-    const result = {};
-
-    if (to === 'warehouse') {
-        result['ลำดับ'] = String(AppState.data.warehouse.length + 1);
-        result['วันที่แจ้ง'] = item['วันที่แจ้งซ่อม'] || item['วันที่เข้าแก้ไข'] || '';
-        result['งานของเดือน'] = item['เดือน'] || '';
-        result['ผู้แจ้ง'] = item['ชื่อผู้แจ้งซ่อม'] || item['ผู้รับผิดชอบ'] || '';
-        result['ฝ่าย'] = item['ฝ่าย'] || '';
-        result['ชั้น'] = item['ชั้น'] || '';
-        result['รายละเอียด'] = item['หัวข้อ'] || item['เรื่อง'] || '';
-        result['ประเภท'] = item['ประเภท'] || '';
-        result['โอนย้ายซ่อมในเดือน'] = '';
-        result['สถานะงาน'] = item['สถานะ'] || item['สำเร็จ'] || 'รอดำเนินการ';
-        result['ความเร่งด่วน'] = item['ความเร่งด่วน'] || '';
-    } else if (to === 'requests') {
-        result['ลำดับ'] = String(AppState.data.requests.length + 1);
-        result['ชื่อผู้แจ้งซ่อม'] = item['ผู้แจ้ง'] || item['ผู้รับผิดชอบ'] || '';
-        result['ฝ่าย'] = item['ฝ่าย'] || '';
-        result['แจ้งผ่าน'] = '';
-        result['เรื่อง'] = item['รายละเอียด'] || item['หัวข้อ'] || '';
-        result['ชั้น'] = item['ชั้น'] || '';
-        result['ประเภท'] = item['ประเภท'] || '';
-        result['วันที่แจ้งซ่อม'] = item['วันที่แจ้ง'] || '';
-        result['ตำแหน่ง'] = item['ตำแหน่ง'] || '';
-        result['สถานะ'] = item['สถานะงาน'] || item['สำเร็จ'] || 'รอดำเนินการ';
-        result['วันที่เข้าแก้ไข'] = '';
-    } else if (to === 'planned') {
-        result['รหัสงานซ่อม'] = 'MTC-MT-NEW';
-        result['หัวข้อ'] = item['เรื่อง'] || item['รายละเอียด'] || '';
-        result['ชั้น'] = item['ชั้น'] || '';
-        result['งานเพิ่มเติม'] = '';
-        result['ประเภท'] = item['ประเภท'] || '';
-        result['ตำแหน่ง'] = item['ตำแหน่ง'] || '';
-        result['ผู้รับผิดชอบ'] = '';
-        result['หมายเหตุ'] = '';
-        result['ระดับ'] = '';
-        result['ความสำคัญ'] = '';
-        result['ความเร่งด่วน'] = item['ความเร่งด่วน'] || '';
-        result['สำเร็จ'] = item['สถานะ'] || item['สถานะงาน'] || 'รอดำเนินการ';
-        result['วันที่เข้าแก้ไข'] = '';
-        result['จำนวนคนที่ใช้'] = '';
-        result['เวลาที่ใช้ (นาที)'] = '';
-        result['ค่าใช้จ่าย (บาท)'] = '';
-        result['วิธีแก้ไข'] = '';
-        result['เดือน'] = item['งานของเดือน'] || '';
-        result['สัปดาห์'] = '';
-    }
-
-    return result;
-}
-
-// ========================================
-// Drag and Drop
-// ========================================
-function initDragDrop() {
-    const rows = document.querySelectorAll('.data-table tbody tr[draggable="true"]');
-    rows.forEach(row => {
-        row.addEventListener('dragstart', handleDragStart);
-        row.addEventListener('dragend', handleDragEnd);
-        row.addEventListener('dragover', handleDragOver);
-        row.addEventListener('drop', handleDrop);
-        row.addEventListener('dragenter', handleDragEnter);
-        row.addEventListener('dragleave', handleDragLeave);
-    });
-}
-
-let dragSource = null;
-
-function handleDragStart(e) {
-    dragSource = this;
-    this.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', JSON.stringify({
-        source: this.dataset.source,
-        index: parseInt(this.dataset.index)
-    }));
-}
-
-function handleDragEnd(e) {
-    this.classList.remove('dragging');
-    document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
-}
-
-function handleDragOver(e) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-}
-
-function handleDragEnter(e) {
-    this.classList.add('drag-over');
-}
-
-function handleDragLeave(e) {
-    this.classList.remove('drag-over');
-}
-
-function handleDrop(e) {
-    e.preventDefault();
-    this.classList.remove('drag-over');
-
-    if (dragSource === this) return;
-
-    try {
-        const dragData = JSON.parse(e.dataTransfer.getData('text/plain'));
-        const dropIndex = parseInt(this.dataset.index);
-        const source = dragData.source;
-        const fromIndex = dragData.index;
-
-        if (source && fromIndex !== undefined && dropIndex !== undefined) {
-            const arr = AppState.data[source];
-            const [moved] = arr.splice(fromIndex, 1);
-            arr.splice(dropIndex, 0, moved);
-
-            // Sync reordered data to Google Sheets
-            if (AppState.useGoogleSheets && AppState.isOnline) {
-                updateSyncStatus('syncing');
-                GoogleSheetsDB.writeFullSheet(source, arr).catch(err => {
-                    console.warn('Failed to sync reorder to Google Sheets:', err);
-                    showToast('เรียงลำดับในเครื่องสำเร็จ แต่ไม่สามารถซิงค์ได้', 'warning');
-                });
-            }
-
-            saveData();
-            renderPage(AppState.currentPage);
-            showToast('เรียงลำดับใหม่สำเร็จ', 'info');
-        }
-    } catch (err) {
-        console.error('Drop error:', err);
-    }
-}
-
-// ========================================
-// Helper Functions
-// ========================================
-function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
-
-function getStatusClass(status) {
-    if (!status) return '';
-    if (status.includes('เสร็จ') || status.includes('เรียบร้อย') || status.includes('สำเร็จ')) return 'done';
-    if (status.includes('กำลัง')) return 'inprogress';
-    if (status.includes('รอ') || status.includes('pending')) return 'pending';
-    if (status.includes('โอนย้าย')) return 'transfer';
-    return '';
-}
-
-function formatStatus(status) {
-    if (!status) return '-';
-    return status;
-}
-
-function renderStatusBadge(status) {
-    if (!status) return '<span class="status-badge">-</span>';
-    const cls = getStatusClass(status);
-    return `<span class="status-badge ${cls}">${escapeHtml(status)}</span>`;
-}
-
-function renderPriority(priority) {
-    if (!priority) return '-';
-    const cls = priority.includes('สำคัญ') ? 'high' : 'medium';
-    return `<span class="priority-badge ${cls}">${escapeHtml(priority)}</span>`;
-}
-
-function renderUrgencyBadge(urgency) {
-    if (!urgency) return '-';
-    const cls = urgency.includes('เร่งด่วน') && !urgency.includes('ไม่') ? 'high' : 'low';
-    return `<span class="priority-badge ${cls}">${escapeHtml(urgency)}</span>`;
-}
-
-function formatDate(dateStr) {
-    if (!dateStr) return '-';
-    // Handle "2569-04-17 00:00:00" format
-    const match = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
-    if (match) {
-        return `${match[3]}/${match[2]}/${match[1]}`;
-    }
-    return dateStr;
-}
-
-function formatDateForInput(dateStr) {
-    if (!dateStr) return '';
-    const match = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
-    if (match) {
-        // Convert Thai year to CE for input
-        let year = parseInt(match[1]);
-        if (year > 2500) year -= 543;
-        return `${year}-${match[2]}-${match[3]}`;
-    }
-    return '';
-}
-
-function getPageName(source) {
-    const names = {
-        planned: 'งานซ่อมตามแผน',
-        requests: 'แจ้งซ่อมเพิ่มเติม',
-        warehouse: 'คลังงานซ่อม',
-        leaks: 'ตำแหน่งน้ำรั่ว',
-        curtains: 'เช็คม่าน'
-    };
-    return names[source] || source;
 }
 
 // ========================================
@@ -2175,28 +1168,186 @@ function getPageName(source) {
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
     if (!container) return;
-    const icons = {
-        success: 'check_circle',
-        error: 'error',
-        warning: 'warning',
-        info: 'info'
-    };
 
+    const icons = { success: 'check_circle', error: 'error', warning: 'warning', info: 'info' };
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    // XSS-safe: use textContent instead of innerHTML for the message
-    const iconSpan = document.createElement('span');
-    iconSpan.className = 'material-icons-round';
-    iconSpan.textContent = icons[type] || 'info';
-    const msgSpan = document.createElement('span');
-    msgSpan.textContent = message;
-    toast.appendChild(iconSpan);
-    toast.appendChild(msgSpan);
-
+    toast.innerHTML = `
+        <span class="material-icons-round toast-icon">${icons[type] || 'info'}</span>
+        <span class="toast-message">${escHtml(message)}</span>
+    `;
     container.appendChild(toast);
 
     setTimeout(() => {
         toast.classList.add('removing');
         setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, 3500);
+}
+
+// ========================================
+// Utilities
+// ========================================
+function escHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ========================================
+// Manual Sync & Logout
+// ========================================
+async function manualSync() {
+    if (!AppState.sheetUrl) {
+        showToast('คุณอยู่ในโหมดออฟไลน์ กรุณาเข้าสู่ระบบเพื่อซิงค์ข้อมูล', 'warning');
+        return;
+    }
+    
+    updateSyncStatus('syncing');
+    showToast('กำลังประมวลผลไฟล์ Excel และอัปโหลด...', 'info');
+    
+    try {
+        // 1. Auto-upload to Google Apps Script (Auto-Sync)
+        if (AppState.sheetUrl.includes('script.google.com')) {
+            const payload = { repairs: AppState.data.repairs };
+            fetch(AppState.sheetUrl, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(() => {
+                console.log('Upload request sent to Google Apps Script');
+            }).catch(e => console.error('Upload Error:', e));
+        }
+        
+        let workbook = new ExcelJS.Workbook();
+        let isTemplateLoaded = false;
+        
+        try {
+            // 2. Fetch the original template file
+            const templateRes = await fetch('อัปเดตตารางงานซ่อมติดตามรายเดือน.xlsm');
+            if (templateRes.ok) {
+                const arrayBuffer = await templateRes.arrayBuffer();
+                await workbook.xlsx.load(arrayBuffer);
+                isTemplateLoaded = true;
+            }
+        } catch (e) {
+            console.warn("Could not load template, falling back to new workbook", e);
+        }
+        
+        // 4. Update or create "🛠️งานซ่อมตามแผน" sheet
+        let plannedSheet = workbook.getWorksheet('🛠️งานซ่อมตามแผน');
+        const plannedData = AppState.data.repairs.filter(r => r.sourceTable !== 'requests');
+        
+        if (!plannedSheet) {
+            plannedSheet = workbook.addWorksheet('🛠️งานซ่อมตามแผน');
+            plannedSheet.addRow(['Ref. ID', 'รายละเอียด', 'แผนก/ส่วนงาน', 'หมายเหตุ', 'ประเภท', 'สถานที่', 'ช่างซ่อม', 'สถานะ', 'วันที่ซ่อม']);
+        }
+        
+        // Clear existing rows starting from row 2 (only if template loaded)
+        if (isTemplateLoaded) {
+            let rowIdx = 2;
+            while(plannedSheet.getRow(rowIdx).hasValues) {
+                plannedSheet.getRow(rowIdx).values = [];
+                rowIdx++;
+            }
+        }
+        
+        // Insert new data
+        plannedData.forEach((r, i) => {
+            const row = plannedSheet.getRow(i + 2);
+            row.getCell(1).value = r.refId || '';
+            row.getCell(2).value = r.description || '';
+            row.getCell(3).value = r.department || '';
+            row.getCell(4).value = r.note || '';
+            row.getCell(5).value = r.type || '';
+            row.getCell(6).value = r.location || '';
+            row.getCell(7).value = r.technician || '';
+            
+            if (isTemplateLoaded) {
+                row.getCell(12).value = (r.status === 'เรียบร้อย' ? 'สำเร็จ' : r.status) || '';
+                row.getCell(13).value = r.date || '';
+                row.getCell(14).value = 1;
+                row.getCell(15).value = 60;
+                row.getCell(16).value = 0;
+                row.getCell(17).value = r.actionTaken || '';
+            } else {
+                row.getCell(8).value = r.status || '';
+                row.getCell(9).value = r.date || '';
+            }
+            row.commit();
+        });
+        
+        // 5. Update or create "🔧แจ้งซ่อมเพิ่มเติม" sheet
+        let reqSheet = workbook.getWorksheet('🔧แจ้งซ่อมเพิ่มเติม');
+        const reqData = AppState.data.repairs.filter(r => r.sourceTable === 'requests');
+        
+        if (!reqSheet) {
+            reqSheet = workbook.addWorksheet('🔧แจ้งซ่อมเพิ่มเติม');
+            reqSheet.addRow(['Ref. ID', 'ผู้แจ้ง', 'แผนก', 'ช่องทาง', 'รายละเอียด', 'สถานที่', 'ประเภท', 'วันที่แจ้งซ่อม', 'สถานที่', 'สถานะ', 'วันที่เสร็จ']);
+        }
+        
+        if (isTemplateLoaded) {
+            let reqRowIdx = 2;
+            while(reqSheet.getRow(reqRowIdx).hasValues) {
+                reqSheet.getRow(reqRowIdx).values = [];
+                reqRowIdx++;
+            }
+        }
+        
+        reqData.forEach((r, i) => {
+            const row = reqSheet.getRow(i + 2);
+            row.getCell(1).value = r.refId || '';
+            row.getCell(2).value = r.reporter || '';
+            row.getCell(3).value = r.department || '';
+            row.getCell(4).value = 'Web App';
+            row.getCell(5).value = r.description || '';
+            row.getCell(6).value = r.department || '';
+            row.getCell(7).value = r.type || '';
+            row.getCell(8).value = r.date || '';
+            row.getCell(9).value = r.location || '';
+            row.getCell(10).value = r.status || '';
+            row.getCell(11).value = r.date || '';
+            row.commit();
+        });
+        
+        // 6. Generate blob and download
+        const outBuffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([outBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const ext = isTemplateLoaded ? '.xlsm' : '.xlsx';
+        saveAs(blob, "MTC_Data_Export_" + new Date().getTime() + ext);
+        
+        updateSyncStatus('live');
+        showToast('อัปโหลดข้อมูลและดาวน์โหลดไฟล์ Excel เรียบร้อย', 'success');
+        
+        // Icon animation
+        const icon = document.querySelector('.sync-icon');
+        if (icon) {
+            icon.style.transform = 'rotate(360deg)';
+            icon.style.transition = 'transform 0.5s ease';
+            setTimeout(() => {
+                icon.style.transform = 'none';
+                icon.style.transition = 'none';
+            }, 500);
+        }
+        
+    } catch (error) {
+        console.error("Sync Error:", error);
+        showToast('เกิดข้อผิดพลาดในการส่งออกไฟล์', 'error');
+        updateSyncStatus('live');
+    }
+}
+
+function handleLogout() {
+    // Clear credentials
+    localStorage.removeItem('mtc_sheet_id');
+    localStorage.removeItem('mtc_sheet_url');
+    AppState.sheetUrl = '';
+    
+    // Switch to offline status
+    updateSyncStatus('offline');
+    
+    // Hide app, show login
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('login-screen').classList.remove('hidden');
+    
+    showToast('ออกจากระบบเรียบร้อย', 'info');
 }
