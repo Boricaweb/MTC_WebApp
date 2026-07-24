@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Repair {
+  id           Int      @id @default(autoincrement())
+  order        String
+  reporter     String
+  department   String
+  channel      String
+  subject      String
+  floor        String
+  type         String
+  dateReported String
+  location     String
+  status       String
+  dateFixed    String   @default("")
+  photos       Json     @default("[]")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model WeeklyData {
+  id         Int    @id @default(autoincrement())
+  month      String @unique
+  weeks      Json
+  cumulative Json
+}
+
+model AnalysisData {
+  id          Int    @id @default(autoincrement())
+  month       String @unique
+  departments Json
+  repairTypes Json
+  totals      Json
+}
+
+model AppSettings {
+  id    Int    @id @default(autoincrement())
+  key   String @unique
+  value String
+}
