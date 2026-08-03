@@ -196,7 +196,7 @@ body::after {
     display: flex;
     height: 100vh;
     width: 100vw;
-    overflow: hidden;
+    overflow: auto;
 }
 
 /* ========================================
@@ -385,7 +385,7 @@ body::after {
 .sidebar-logo-text {
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow: auto;
     transition: opacity var(--transition-fast), width var(--transition-fast);
 }
 .sidebar.collapsed .sidebar-logo-text {
@@ -421,7 +421,7 @@ body::after {
     text-transform: uppercase;
     letter-spacing: 1.5px;
     padding: 16px 12px 8px;
-    overflow: hidden;
+    overflow: auto;
     white-space: nowrap;
 }
 .sidebar.collapsed .nav-section-label {
@@ -471,7 +471,7 @@ body::after {
     text-align: center;
 }
 .nav-item .nav-label {
-    overflow: hidden;
+    overflow: auto;
     transition: opacity var(--transition-fast), width var(--transition-fast);
 }
 .sidebar.collapsed .nav-item .nav-label {
@@ -517,7 +517,7 @@ body::after {
     border-radius: var(--radius-sm);
     font-size: 11px;
     color: var(--text-tertiary);
-    overflow: hidden;
+    overflow: auto;
     white-space: nowrap;
 }
 .sidebar.collapsed .sidebar-footer-info span:not(.material-icons-round) {
@@ -531,7 +531,7 @@ body::after {
     flex: 1;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow: auto;
     position: relative;
 }
 
@@ -693,7 +693,7 @@ body::after {
     box-shadow: var(--glass-shadow);
     transition: all var(--transition-fast);
     position: relative;
-    overflow: hidden;
+    overflow: auto;
 }
 .stat-card::before {
     content: '';
@@ -821,7 +821,7 @@ body::after {
     border: var(--glass-border);
     border-radius: var(--radius-lg);
     box-shadow: var(--glass-shadow);
-    overflow: hidden;
+    overflow: auto;
 }
 .table-scroll {
     overflow-x: auto;
@@ -1254,7 +1254,7 @@ body::after {
     position: relative;
     aspect-ratio: 1;
     border-radius: var(--radius-sm);
-    overflow: hidden;
+    overflow: auto;
     border: 2px solid var(--border-light);
 }
 .photo-gallery-item img {
@@ -1573,7 +1573,7 @@ body::after {
     height: 4px;
     border-radius: var(--radius-full);
     background: var(--slate-200);
-    overflow: hidden;
+    overflow: auto;
 }
 .dept-bar-fill {
     height: 100%;
