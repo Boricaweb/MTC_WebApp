@@ -8,8 +8,10 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import { useToast } from '@/components/Toast';
 import { Repair } from '@/types';
 import { useSync } from '@/hooks/useSync';
+import { useAuth } from '@/context/AuthContext';
 
 export default function RepairsPage() {
+  const { isAdmin } = useAuth();
   const [repairs, setRepairs] = useState<Repair[]>([]);
   const [filteredRepairs, setFilteredRepairs] = useState<Repair[]>([]);
   const [loading, setLoading] = useState(true);
@@ -154,10 +156,12 @@ export default function RepairsPage() {
               />
             </div>
             
-            <button className="btn btn-primary" onClick={handleAdd}>
-              <span className="material-icons-round">add</span>
-              เพิ่มงานซ่อม
-            </button>
+            {isAdmin && (
+              <button className="btn btn-primary" onClick={handleAdd}>
+                <span className="material-icons-round">add</span>
+                เพิ่มงานซ่อม
+              </button>
+            )}
           </div>
           
           {loading ? (

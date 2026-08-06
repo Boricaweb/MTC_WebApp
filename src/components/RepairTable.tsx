@@ -4,6 +4,7 @@ import React from 'react';
 import { Repair } from '@/types';
 import { STATUS_COLORS } from '@/lib/constants';
 import { formatDateThai } from '@/lib/utils';
+import { useAuth } from '@/context/AuthContext';
 
 interface RepairTableProps {
   repairs: Repair[];
@@ -12,6 +13,8 @@ interface RepairTableProps {
 }
 
 export default function RepairTable({ repairs, onEdit, onDelete }: RepairTableProps) {
+  const { isAdmin } = useAuth();
+
   if (repairs.length === 0) {
     return (
       <div className="empty-state">
@@ -38,7 +41,7 @@ export default function RepairTable({ repairs, onEdit, onDelete }: RepairTablePr
             <th>สถานะ</th>
             <th>วันที่ซ่อมเสร็จ</th>
             <th>รูปภาพ</th>
-            <th>จัดการ</th>
+            {isAdmin && <th>จัดการ</th>}
           </tr>
         </thead>
         <tbody>
@@ -66,22 +69,24 @@ export default function RepairTable({ repairs, onEdit, onDelete }: RepairTablePr
                   <span style={{ color: 'var(--text-tertiary)' }}>-</span>
                 )}
               </td>
-              <td className="td-actions">
-                <button 
-                  className="action-btn" 
-                  title="แก้ไข" 
-                  onClick={() => onEdit(repair)}
-                >
-                  <span className="material-icons-round">edit</span>
-                </button>
-                <button 
-                  className="action-btn delete" 
-                  title="ลบ" 
-                  onClick={() => repair.id && onDelete(repair.id)}
-                >
-                  <span className="material-icons-round">delete</span>
-                </button>
-              </td>
+              {isAdmin && (
+                <td className="td-actions">
+                  <button 
+                    className="action-btn" 
+                    title="แก้ไข" 
+                    onClick={() => onEdit(repair)}
+                  >
+                    <span className="material-icons-round">edit</span>
+                  </button>
+                  <button 
+                    className="action-btn delete" 
+                    title="ลบ" 
+                    onClick={() => repair.id && onDelete(repair.id)}
+                  >
+                    <span className="material-icons-round">delete</span>
+                  </button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

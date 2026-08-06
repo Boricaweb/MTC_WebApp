@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { isAdminAuthenticated } from '@/lib/auth';
 import ExcelJS from 'exceljs';
 import path from 'path';
 import fs from 'fs';
 
 export async function GET() {
+  if (!isAdminAuthenticated()) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const repairs = await prisma.repair.findMany({
       orderBy: { id: 'asc' }

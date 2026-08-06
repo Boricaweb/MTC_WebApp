@@ -3,11 +3,13 @@
 import React, { useState, useEffect } from 'react';
 import { formatDateThai } from '@/lib/utils';
 import { useToast } from './Toast';
+import { useAuth } from '@/context/AuthContext';
 
 export default function Topbar({ title = 'ระบบจัดการงานซ่อมบำรุง' }: { title?: string }) {
   const [currentDate, setCurrentDate] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
   const { showToast } = useToast();
+  const { isAdmin } = useAuth();
 
   useEffect(() => {
     const today = new Date();
@@ -61,26 +63,28 @@ export default function Topbar({ title = 'ระบบจัดการงา�
           <span id="current-date">{currentDate}</span>
         </div>
         
-        <div className="action-buttons">
-          <button 
-            id="sync-btn" 
-            className={`btn-icon ${isSyncing ? 'syncing' : ''}`} 
-            title="ซิงค์ข้อมูลไป Google Sheets"
-            onClick={handleSync}
-            disabled={isSyncing}
-          >
-            <span className="material-icons-round">sync</span>
-          </button>
-          
-          <button 
-            id="export-btn" 
-            className="btn-icon" 
-            title="ดาวน์โหลดไฟล์ Excel"
-            onClick={handleExport}
-          >
-            <span className="material-icons-round">download</span>
-          </button>
-        </div>
+        {isAdmin && (
+          <div className="action-buttons">
+            <button 
+              id="sync-btn" 
+              className={`btn-icon ${isSyncing ? 'syncing' : ''}`} 
+              title="ซิงค์ข้อมูลไป Google Sheets"
+              onClick={handleSync}
+              disabled={isSyncing}
+            >
+              <span className="material-icons-round">sync</span>
+            </button>
+            
+            <button 
+              id="export-btn" 
+              className="btn-icon" 
+              title="ดาวน์โหลดไฟล์ Excel"
+              onClick={handleExport}
+            >
+              <span className="material-icons-round">download</span>
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );
