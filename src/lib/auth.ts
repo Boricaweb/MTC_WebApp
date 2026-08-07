@@ -1,7 +1,7 @@
 ﻿import { cookies } from 'next/headers';
 
-export function isAdminAuthenticated() {
-  const cookieStore = cookies();
-  const session = cookieStore.get('mtc_admin_session');
-  return session?.value === 'authenticated';
+export async function isAdminAuthenticated(): Promise<boolean> {
+  const cookieStore = await cookies();
+  const session = cookieStore.get('mtc_admin_session')?.value;
+  return session === 'authenticated';
 }
