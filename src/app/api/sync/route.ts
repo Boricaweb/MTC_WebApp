@@ -4,7 +4,7 @@ import { isAdminAuthenticated } from '@/lib/auth';
 
 // This acts as a proxy to avoid CORS issues in the browser
 export async function POST(request: Request) {
-  if (!isAdminAuthenticated()) {
+  if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
