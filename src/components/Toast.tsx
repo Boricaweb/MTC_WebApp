@@ -31,7 +31,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <div id="toast-container" className="toast-container" style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div id="toast-container" className="toast-container">
         {toasts.map(toast => (
           <div key={toast.id} className={`toast toast-${toast.type} active`} style={{ padding: '12px 24px', borderRadius: '8px', background: toast.type === 'error' ? '#fee2e2' : '#dcfce7', color: toast.type === 'error' ? '#991b1b' : '#166534', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', display: 'flex', alignItems: 'center', gap: '8px', animation: 'slideInRight 0.3s ease forwards' }}>
             <span className="material-icons-round">

@@ -2,6 +2,36 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { isAdminAuthenticated } from '@/lib/auth';
 
+/**
+ * Validates that a URL is safe to fetch (prevents SSRF).
+ * Only allows HTTPS URLs and blocks private/internal IP ranges.
+ */
+function isSafeUrl(urlString: string): boolean {
+  try {
+    const url = new URL(urlString);
+    // Only allow HTTPS
+    if (url.protocol !== 'https:') return false;
+    // Block private/internal hostnames
+    const hostname = url.hostname.toLowerCase();
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '::1' ||
+      hostname === '0.0.0.0' ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('172.') ||
+      hostname.startsWith('192.168.') ||
+      hostname.endsWith('.local') ||
+      hostname.endsWith('.internal')
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // This acts as a proxy to avoid CORS issues in the browser
 export async function POST(request: Request) {
   if (!(await isAdminAuthenticated())) {
@@ -14,6 +44,10 @@ export async function POST(request: Request) {
 
     if (!url) {
       return NextResponse.json({ error: 'Missing Web App URL' }, { status: 400 });
+    }
+
+    if (!isSafeUrl(url)) {
+      return NextResponse.json({ error: 'Invalid or unsafe URL' }, { status: 400 });
     }
 
     // Prepare data to sync

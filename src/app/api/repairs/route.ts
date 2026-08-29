@@ -37,7 +37,8 @@ export async function POST(request: Request) {
       const lastRepair = await prisma.repair.findFirst({
         orderBy: { id: 'desc' }
       });
-      const nextOrder = lastRepair && lastRepair.order ? (parseInt(lastRepair.order) + 1).toString() : '1';
+      const lastOrderNum = lastRepair?.order ? parseInt(lastRepair.order, 10) : NaN;
+      const nextOrder = Number.isFinite(lastOrderNum) ? (lastOrderNum + 1).toString() : '1';
       body.order = nextOrder;
     }
 

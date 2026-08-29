@@ -21,19 +21,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [sheetUrl, setSheetUrl] = useState('');
   const [hydrated, setHydrated] = useState(false);
 
-  // Restore session from localStorage on mount
+  // Restore session: verify with server using httpOnly cookie
   useEffect(() => {
-    const savedMode = localStorage.getItem('mtc_auth_mode') as AuthMode | null;
     const savedUrl = localStorage.getItem('mtc_script_url') || '';
-    if (savedMode === 'admin') {
-      setMode('admin');
-      setIsAdmin(true);
-      setSheetUrl(savedUrl);
-    } else if (savedMode === 'view') {
-      setMode('view');
-      setIsAdmin(false);
-    }
-    setHydrated(true);
+    
+    fetch('/api/auth/me')
+      .then(res => res.json())
+      .then(data => {
+        if (data.isAdmin) {
+          setMode('admin');
+          setIsAdmin(true);
+          setSheetUrl(savedUrl);
+        } else {
+          // Server says not authenticated — clear any stale localStorage
+          setMode('view');
+          setIsAdmin(false);
+          localStorage.removeItem('mtc_auth_mode');
+          localStorage.removeItem('mtc_script_url');
+        }
+      })
+      .catch(() => {
+        setMode('view');
+        setIsAdmin(false);
+      })
+      .finally(() => {
+        setHydrated(true);
+      });
   }, []);
 
   const loginAdmin = async (username: string, password: string, url: string): Promise<boolean> => {

@@ -49,16 +49,16 @@ export default function Topbar({ title = 'ระบบจัดการงา�
   };
 
   return (
-    <header className="top-bar">
-      <div className="top-bar-left">
+    <header className="topbar">
+      <div className="topbar-left">
         <button id="mobile-menu-btn" className="mobile-menu-btn">
           <span className="material-icons-round">menu</span>
         </button>
         <h1 id="page-title" className="page-title">{title}</h1>
       </div>
       
-      <div className="top-bar-right">
-        <div className="date-display">
+      <div className="topbar-right">
+        <div className="topbar-date">
           <span className="material-icons-round">calendar_today</span>
           <span id="current-date">{currentDate}</span>
         </div>

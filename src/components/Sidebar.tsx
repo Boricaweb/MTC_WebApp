@@ -25,12 +25,10 @@ export default function Sidebar() {
   return (
     <nav className="sidebar">
       <div className="sidebar-header">
-        <div className="logo-container">
-          <span className="material-icons-round logo-icon">engineering</span>
-        </div>
-        <div className="brand">
-          <h2 className="brand-title">MTC</h2>
-          <p className="brand-subtitle">Maintenance System</p>
+        <span className="material-icons-round sidebar-logo-icon">engineering</span>
+        <div className="sidebar-logo-text">
+          <span className="logo-title">MTC</span>
+          <span className="logo-sub">Maintenance System</span>
         </div>
       </div>
 
@@ -54,7 +52,7 @@ export default function Sidebar() {
         {isAdmin ? 'Admin Mode' : 'View Mode'}
       </div>
 
-      <div className="nav-menu">
+      <div className="sidebar-nav">
         {navItems.map(item => (
           <Link
             key={item.id}
@@ -63,7 +61,7 @@ export default function Sidebar() {
             className={`nav-item ${pathname === item.path ? 'active' : ''}`}
           >
             <span className="material-icons-round">{item.icon}</span>
-            <span className="nav-text">{item.name}</span>
+            <span className="nav-label">{item.name}</span>
           </Link>
         ))}
       </div>
@@ -77,7 +75,7 @@ export default function Sidebar() {
           className="nav-item external-link"
         >
           <span className="material-icons-round">inventory_2</span>
-          <span className="nav-text">ระบบเบิกอะไหล่</span>
+          <span className="nav-label">ระบบเบิกอะไหล่</span>
           <span className="material-icons-round external-icon">open_in_new</span>
         </a>
         
@@ -101,7 +99,7 @@ export default function Sidebar() {
           id="nav-logout"
         >
           <span className="material-icons-round">{isAdmin ? 'logout' : 'swap_horiz'}</span>
-          <span className="nav-text">{isAdmin ? 'ออกจากระบบ' : 'เปลี่ยนโหมด'}</span>
+          <span className="nav-label">{isAdmin ? 'ออกจากระบบ' : 'เปลี่ยนโหมด'}</span>
         </button>
       </div>
     </nav>

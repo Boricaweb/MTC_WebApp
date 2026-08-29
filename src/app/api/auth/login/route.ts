@@ -1,4 +1,5 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 
 export async function POST(request: Request) {
   try {
@@ -17,10 +18,13 @@ export async function POST(request: Request) {
     if (username === adminUser && password === adminPass) {
       const response = NextResponse.json({ success: true, role: 'admin' });
       
+      // Generate a cryptographically random session token
+      const sessionToken = crypto.randomBytes(32).toString('hex');
+      
       // Set secure HTTP-only cookie
       response.cookies.set({
         name: 'mtc_admin_session',
-        value: 'authenticated',
+        value: sessionToken,
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
